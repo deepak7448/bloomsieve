@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "bloomsieve"
 dynamic = ["version"]
-description = "A clean, high-performance, standalone Python Bloom Filter package with local memory-mapped file caching and RedisBloom support."
+description = "A high-performance Python Bloom Filter with local mmap persistence and RedisBloom support."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
@@ -38,9 +38,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/example/bloomsieve"
-Repository = "https://github.com/example/bloomsieve"
-Issues = "https://github.com/example/bloomsieve/issues"
+Homepage = "https://github.com/deepak7448/bloomsieve"
+Repository = "https://github.com/deepak7448/bloomsieve"
+Issues = "https://github.com/deepak7448/bloomsieve/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bloomsieve"]
