@@ -1,0 +1,43 @@
+# Python runtime and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution and packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+eggs/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE files and configuration
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing and coverage
+.coverage
+.pytest_cache/
+htmlcov/
+cov.xml
+.tox/
+
+# Local cache files
+bloom_filters/
+demo_filters/
+demo_persistent.bloom
+*.bloom
+tests/*
