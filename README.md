@@ -1,179 +1,266 @@
 # Bloomsieve
 
-[![PyPI version](https://img.shields.io/badge/pypi-v0.1.2-blue.svg)](https://pypi.org/project/bloomsieve/)
-[![Python Version](https://img.shields.io/pypi/pyversions/bloomsieve.svg)](https://pypi.org/project/bloomsieve/)
+[![CI](https://img.shields.io/github/actions/workflow/status/deepak7448/bloomsieve/ci.yml?branch=master&label=CI)](https://github.com/deepak7448/bloomsieve/actions)
+[![Python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://pypi.org/project/bloomsieve/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Bloomsieve** is a high-performance Python Bloom Filter library with Kirsch-Mitzenmacher double-hashing, local memory-mapped (`mmap`) persistence, and integrated RedisBloom support.
+**Stop sending unnecessary membership checks to Redis.** Bloomsieve is a persistent
+mmap-backed local Bloom filter that rejects definite-negative membership queries
+before they ever become a network request to RedisBloom.
 
----
+```text
+                         Application
+                              │
+                              ▼
+                     ┌─────────────────┐
+                     │    Bloomsieve   │
+                     │   local mmap    │
+                     └────────┬────────┘
+                              │
+                   ┌──────────┴──────────┐
+                   │                     │
+             definitely absent      possibly present
+                   │                     │
+                   ▼                     ▼
+                 return               RedisBloom
+                locally              verification
+```
 
-## Features
+## Why this exists
 
-- ⚡ **Kirsch-Mitzenmacher Hashing**: Reduces cryptographic hash calls from $O(k)$ to $O(1)$ per item via SHA-256 double-hashing.
-- 💾 **Memory-Mapped (`mmap`) Persistence**: Fast disk storage backed by kernel page caching with header metadata (`<QQ`).
-- 🚀 **Hybrid Redis + mmap Acceleration**: Zero-latency local negative lookups backed by distributed RedisBloom synchronization.
-- 🔄 **Zero-Downtime Rotation**: Built-in `rebuild()` and atomic `swap()` for live cache rotation and capacity expansion.
-- 🛡️ **Zero Dependencies for Core Mode**: Standalone `BloomFilter` requires standard library modules only.
+Most membership workloads are negative-heavy: "is this user active?", "is this
+token valid?", "is this key seen before?" are mostly answered "no". With a direct
+RedisBloom setup, **every** one of those queries crosses the network — even the
+ones that are trivially absent.
 
----
-
-## Requirements
-
-- **Python**: `3.8+`
-- **Redis Server**: Redis 4.0+ with RedisBloom (Optional: required only for `BloomFilterService`).
-
----
+A Bloom filter has **no false negatives**, so a local "definitely absent" answer
+is provably correct. Bloomsieve keeps a persistent local mirror on disk
+(`mmap`), answers negatives locally, and only sends the *possible positives* to
+RedisBloom for verification. On a 99%-negative workload the local filter removes
+**~99% of Redis membership requests** (see [Benchmarks](docs/benchmarks.md)).
 
 ## Installation
+
+Core mode has **no runtime dependencies**:
 
 ```bash
 pip install bloomsieve
 ```
 
----
+RedisBloom integration is optional:
 
-## Quick Start
-
-### 1. Redis-Backed Service
-
-#### With Local mmap Cache (Zero-Latency Hybrid Acceleration)
-
-```python
-import redis
-from bloomsieve import BloomFilterService
-
-redis_client = redis.Redis(host="localhost", port=6379, db=0)
-
-service = BloomFilterService(redis_client=redis_client, capacity=10000, error_rate=0.01, use_mmap=True)
-service.createFilter("active_tokens")
-
-service.add("active_tokens", "token_xyz")
-print(service.exists("active_tokens", "token_unknown"))  # Returns: False (0 network latency)
+```bash
+pip install "bloomsieve[redis]"
 ```
 
-#### Without Local mmap Cache (Pure Distributed Redis)
-
-```python
-import redis
-from bloomsieve import BloomFilterService
-
-redis_client = redis.Redis(host="localhost", port=6379, db=0)
-
-service = BloomFilterService(redis_client=redis_client, capacity=10000, use_mmap=False)
-service.createFilter("global_users")
-
-service.add("global_users", "user_alice")
-print(service.exists("global_users", "user_alice"))  # Returns: True
-```
-
-### 2. Standalone Bloom Filter (In-Memory & Persistent mmap)
+## 30-second example
 
 ```python
 from bloomsieve import BloomFilter
 
-# In-Memory
-bf = BloomFilter(capacity=100000, error_rate=0.01)
-bf.add("user_101")
-print("user_101" in bf)  # Returns: True
+bloom = BloomFilter(
+    capacity=10_000_000,
+    error_rate=0.001,
+    filepath="/var/lib/bloomsieve/users.bloom",   # optional: persist to disk
+)
 
-# Disk-backed mmap file
-with BloomFilter(capacity=50000, error_rate=0.005, filepath="cache.bloom") as bf_disk:
-    bf_disk.add("session_abc")
-    print("session_abc" in bf_disk)  # Returns: True
+bloom.add("user:123")
+
+if "user:999" not in bloom:
+    return None   # definite answer: user:999 is not present, nothing to look up
 ```
 
----
+`capacity` is the expected number of items, `error_rate` the target false-positive
+probability. Data survives restarts when you pass `filepath`.
 
-## API Overview
-
-### `BloomFilter`
-
-`BloomFilter(capacity: int, error_rate: float, filepath: str | None = None)`
-
-- `add(item: str | bytes) -> bool`: Add item to filter.
-- `__contains__(item: str | bytes) -> bool`: Check membership (`item in bf`).
-- `clear()`: Reset all bits to zero.
-- `close()`: Flush and close file handles.
-
-### `BloomFilterService`
-
-`BloomFilterService(redis_client, capacity=1000000, error_rate=0.001, expansion=2, use_mmap=False, mmap_dir=None)`
-
-- `createFilter(name, capacity=None, error_rate=None) -> bool`: Reserve Redis filter.
-- `add(name, item) -> bool`: Add item to Redis and local mmap cache.
-- `exists(name, item) -> bool`: Check membership (skips network if local mmap is False).
-- `rebuild(name, items, capacity=None, error_rate=None) -> bool`: Re-create filter with optional capacity expansion and bulk-insert items.
-- `swap(temp_name, live_name) -> bool`: Atomically swap temporary filter key to live filter in Redis and disk mmap.
-- `get_info(name) -> dict`: Returns `{"capacity": int, "inserted": int, "ratio": float}`.
-- `load_ratio(name) -> float`: Return fill ratio (`inserted / capacity`).
-- `acquire_lock(lock_name, ttl=600)` / `release_lock(lock_name)`: Distributed Redis lock management.
-
----
-
-## Configuration
-
-| Option       | Default                | Description                                      |
-| :----------- | :--------------------- | :----------------------------------------------- |
-| `capacity`   | _Required_ / `1000000` | Target element capacity ($n$)                    |
-| `error_rate` | _Required_ / `0.001`   | Target false positive probability ($p$)          |
-| `use_mmap`   | `False`                | Enable local disk mmap cache acceleration        |
-| `mmap_dir`   | `./bloom_filters`      | Storage directory for local `.bloom` cache files |
-
-_Memory Footprint_: ~9.6 bits per item for 1% error rate (~1.14 MB per 1,000,000 items).
-
----
-
-## Examples
-
-### Threshold Rebuilding & Atomic Rotation (`rebuild` + `swap`)
+## Redis example
 
 ```python
 import redis
 from bloomsieve import BloomFilterService
 
-client = redis.Redis(host="localhost", port=6379, db=0)
-service = BloomFilterService(redis_client=client, capacity=10000, error_rate=0.001, use_mmap=True)
+client = redis.Redis(host="redis.example.com", port=6379, db=0)
 
-# Auto-rebuild with 2x capacity headroom when load ratio >= 80%
-if service.load_ratio("bloom:users") >= 0.8:
-    if service.acquire_lock("rebuild:users", ttl=600):
-        try:
-            items = (f"user_{i}" for i in range(20000))
-            service.rebuild("bloom:users:temp", items=items, capacity=40000)
-            service.swap("bloom:users:temp", "bloom:users")
-        finally:
-            service.release_lock("rebuild:users")
+svc = BloomFilterService(
+    redis_client=client,
+    capacity=1_000_000,
+    error_rate=0.001,
+    use_mmap=True,                 # enable the local pre-filter
+    mmap_dir="/var/lib/bloomsieve",
+)
+
+svc.create_filter("active_tokens")
+svc.add("active_tokens", "tok_abc")
+
+svc.exists("active_tokens", "tok_xyz")   # False  – answered locally, no network
+svc.exists("active_tokens", "tok_abc")   # True   – possible positive, verified in Redis
 ```
 
----
+## How it works
 
-## Performance Notes
+- One SHA-256 digest per item, expanded to `k` positions with the
+  Kirsch-Mitzenmacher double-hashing technique.
+- A 16-byte header (`m`, `k`) plus the bit array, stored in a memory-mapped file;
+  reopening a file always uses the stored configuration.
+- `BloomFilterService` layers RedisBloom on top. Every `add` writes to both; every
+  lookup checks the local mirror first and only verifies in Redis when the local
+  answer is not a definite negative.
 
-- **Time Complexity**: $O(1)$ for `add` and membership checks (1 SHA-256 hash digest evaluation).
-- **Sub-Microsecond Latency**: Local `mmap` checks resolve negative lookups in sub-microsecond time outside the Python GC heap.
+See [docs/architecture.md](docs/architecture.md) for the full design including the
+on-disk format, failure modes, and consistency model.
 
----
+## Performance
 
-## FAQ
+Micro-benchmarks of the local filter run at ~200–300k lookups/s with sub-10µs
+p50 latencies. The workload A/B benchmark measures what matters — Redis requests
+removed:
 
-- **Can items be deleted?** No. Standard Bloom filters do not support deletion. Use `rebuild()` or `swap()` to refresh filters.
-- **What happens when capacity is exceeded?** The filter continues working, but false positive rate increases.
-- **Is Redis required?** No. Core `BloomFilter` works 100% standalone without Redis.
+| negative workload | baseline `BF.EXISTS` | Bloomsieve requests | avoided |
+| --- | --- | --- | --- |
+| 50% | 20,000 | 10,011 | 50% |
+| 75% | 20,000 | 5,013 | 75% |
+| 90% | 20,000 | 2,014 | 90% |
+| 99% | 20,000 | 216 | 99% |
 
----
+Measured on a laptop over localhost; remote Redis deployments amplify the latency
+win because each removed request saves a round-trip. Full methodology, hardware,
+and how to reproduce: [docs/benchmarks.md](docs/benchmarks.md).
 
-## Contributing
+## When should I use Bloomsieve?
+
+Good fit:
+
+- membership checks against Redis are frequent and mostly **negative**
+- Redis is remote, so network latency matters
+- a tunable probabilistic pre-filter is acceptable
+- you benefit from a persistent, process-independent local filter
+  (multiple app instances can share one file)
+
+Poor fit:
+
+- almost every lookup is positive (the local filter buys you nothing)
+- membership checks are already local (you don't need Redis at all)
+- exact membership is required with no verification step (Bloom filters have
+  false positives)
+- the dataset churns faster than your rebuild/rotation cycle can refresh the
+  mirror
+
+Bloom-filter semantics, precisely:
+
+- **no false negatives** under correct operation — a local "absent" is definite;
+- **possible false positives** — a local "present" must be verified against
+  RedisBloom (or another authoritative source) when exact membership matters;
+- false positives can be traded down by lowering `error_rate` (larger filter).
+
+## Features
+
+- Standalone `BloomFilter`: in-memory or persistent mmap, zero dependencies.
+- `BloomFilterService`: local-negative short-circuit in front of RedisBloom.
+- `rebuild()` + `swap()` rotation with chunked bulk insertion.
+- Advisory Redis locks for coordinated rebuilds.
+- Corrupt/truncated file detection (`BloomFilterFileError`), conservative Redis
+  failure fallbacks, and full logging of fallback situations.
+
+## API overview
+
+### `BloomFilter`
+
+```python
+BloomFilter(capacity: int, error_rate: float, filepath: str | None = None)
+```
+
+- `add(item: str | bytes) -> bool` — insert; `True` if a bit changed, `False` if already likely present.
+- `item in bf` — membership (no false negatives; `True` = possible positive).
+- `clear() -> None` — reset all bits.
+- `flush() -> None` — persist dirty pages to disk.
+- `close() -> None` — flush and close file handles (context-manager compatible).
+- `m`, `k`, `byte_size`, `newly_created`, `synced` — read-only diagnostics.
+
+### `BloomFilterService`
+
+```python
+BloomFilterService(redis_client, capacity=1_000_000, error_rate=0.001,
+                   expansion=2, use_mmap=False, mmap_dir="bloom_filters")
+```
+
+- `create_filter(name, capacity=None, error_rate=None) -> bool` — reserve via `BF.RESERVE`
+  (`createFilter` kept as a backwards-compatible alias).
+- `add(name, item) -> bool`
+- `exists(name, item) -> bool` — the local-negative short-circuit.
+- `rebuild(name, items, capacity=None, error_rate=None) -> bool`
+- `swap(temp_name, live_name) -> bool` — rotate a rebuilt filter into place.
+- `get_info(name) -> dict`, `load_ratio(name) -> float`
+- `acquire_lock(name, ttl=600) / release_lock(name) -> bool`
+- `flush(name=None) -> None`
+
+## Persistence / mmap behavior
+
+- Writes go to the kernel page cache immediately and are visible to every process
+  mapping the file; they are durable on disk after `flush()`/`close()` or OS
+  writeback.
+- Reopening a file trusts the stored header; a corrupt header or a file truncated
+  below its bit array raises `BloomFilterFileError`.
+- The rotation path (`swap`) flushes the temporary mirror before renaming it into
+  place.
+
+## Consistency and recovery
+
+Redis and the local filesystem are updated as two separate steps — Bloomsieve
+does **not** claim a cross-system atomic swap:
+
+1. `RENAME` the filter in Redis; if that fails nothing else happens.
+2. Rotate the local files.
+
+If a failure lands between the two steps the service logs it and returns `False`;
+a subsequent `rebuild()` repopulates both sides consistently. A freshly created
+local mirror is treated as "unknown" (falling back to Redis) until items have
+been added through the service, so an empty mirror can never produce false
+negatives. Details: [docs/architecture.md](docs/architecture.md).
+
+## Limitations
+
+- Bloom filters cannot delete items; refresh with `rebuild()`/`swap()`.
+- After capacity is exceeded the false-positive rate rises; it does not break.
+- The local mirror is only as fresh as its last `flush()`/`close()`; if the
+  process crashes mid-write the mirror can lag Redis (rebuild to recover).
+- The service's locks are advisory; they are not a consensus-grade distributed
+  lock.
+- Core is tested on Python 3.9–3.13; Python 3.8 is not supported.
+
+## Development
 
 ```bash
 git clone https://github.com/deepak7448/bloomsieve.git
 cd bloomsieve
-pip install -e .[dev]
-pytest
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev,redis]"
 ```
 
----
+## Testing
+
+```bash
+ruff check .
+pytest                                 # unit tests (no Redis required)
+
+# also run the opt-in live-Redis integration suite:
+BLOOMSIEVE_REDIS_URL=redis://localhost:6379/0 pytest
+```
+
+## Benchmarks
+
+```bash
+python benchmarks/benchmark_core.py    # standalone in-memory filter
+python benchmarks/benchmark_mmap.py    # persistent mmap filter
+BLOOMSIEVE_REDIS_URL=redis://localhost:6379/0 python benchmarks/benchmark_redis.py
+```
+
+See [docs/benchmarks.md](docs/benchmarks.md) for methodology and results.
+
+## Contributing
+
+Issues and pull requests are welcome. Please run the linter and the full test
+suite (including the live Redis suite if you can) before submitting.
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+MIT. See [LICENSE](LICENSE).
