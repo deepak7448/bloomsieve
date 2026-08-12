@@ -1,42 +1,35 @@
-import redis
-from bloomsieve import BloomFilter, BloomFilterService
+"""Standalone Bloom filter example (no Redis required).
+
+Run:
+    python examples/basic_usage.py
+"""
+
+from bloomsieve import BloomFilter
 
 
 def main():
-    # 1. Simple Standalone Bloom Filter (Local In-Memory)
-    print("--- 1. Standalone Bloom Filter ---")
+    # 1. In-memory filter.
+    print("--- 1. In-memory Bloom filter ---")
     bf = BloomFilter(capacity=1000, error_rate=0.01)
-    
-    # Add an item
     bf.add("hello")
-    
-    # Check membership using standard Python 'in' operator
-    print(f"Contains 'hello'? {'hello' in bf}")  # True
-    print(f"Contains 'world'? {'world' in bf}")  # False
+    print(f"'hello' in bf -> {'hello' in bf}")  # True
+    print(f"'world' in bf -> {'world' in bf}")  # False
+    print(f"m={bf.m} bits, k={bf.k} hash functions")
 
-    # 2. Simple Redis-Backed Bloom Filter Service
-    print("\n--- 2. Redis-Backed Bloom Filter Service ---")
-    try:
-        # Create a standard Redis connection
-        client = redis.StrictRedis(host="localhost", port=6379, db=0, socket_timeout=1)
-        client.ping()
-        
-        # Initialize service wrapper
-        service = BloomFilterService(redis_client=client, capacity=1000, error_rate=0.01)
-        filter_name = "simple_demo"
-        
-        # Reserve the filter on Redis
-        service.createFilter(filter_name)
-        
-        # Add and check items
-        service.add(filter_name, "hello")
-        print(f"Exists 'hello' in Redis? {service.exists(filter_name, 'hello')}")  # True
-        print(f"Exists 'world' in Redis? {service.exists(filter_name, 'world')}")  # False
-        
-        # Clean up Redis key
-        client.delete(filter_name)
-    except redis.ConnectionError:
-        print("Skipping Redis demo: Local Redis server is not running on localhost:6379.")
+    # 2. Persistent mmap-backed filter.
+    print("\n--- 2. mmap-backed (persistent) Bloom filter ---")
+    path = "/tmp/bloomsieve_example.bloom"
+    with BloomFilter(capacity=5000, error_rate=0.001, filepath=path) as disk_bf:
+        disk_bf.add("session:abc")
+        print(f"'session:abc' -> {'session:abc' in disk_bf}")
+        print(f"'session:def' -> {'session:def' in disk_bf}")
+        print(f"file size: {disk_bf.total_size} bytes (16-byte header + bit array)")
+
+    # 3. Reopen the same file; data survives the process boundary conceptually.
+    print("\n--- 3. Reopening the persisted filter ---")
+    with BloomFilter(capacity=5000, error_rate=0.001, filepath=path) as reopened:
+        print(f"'session:abc' -> {'session:abc' in reopened}")
+    print(f"persisted at: {path}")
 
 
 if __name__ == "__main__":
