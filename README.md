@@ -58,20 +58,28 @@ pip install "bloomsieve[redis]"
 ```python
 from bloomsieve import BloomFilter
 
-bloom = BloomFilter(
-    capacity=10_000_000,
-    error_rate=0.001,
-    filepath="/var/lib/bloomsieve/users.bloom",   # optional: persist to disk
-)
 
-bloom.add("user:123")
+def lookup_user(user_id: str):
+    """Return the cached answer, or None when the user is definitely absent."""
+    bloom = BloomFilter(
+        capacity=10_000_000,
+        error_rate=0.001,
+        filepath="./users.bloom",   # optional: persists the filter to disk
+    )
+    bloom.add("user:123")           # normal application write path
 
-if "user:999" not in bloom:
-    return None   # definite answer: user:999 is not present, nothing to look up
+    if user_id not in bloom:
+        return None                 # definite answer, nothing more to do
+
+    return f"look up {user_id} in your database for an exact answer"
+
+
+print(lookup_user("user:999"))      # None  – rejected by the local filter
+print(lookup_user("user:123"))      # possible positive -> verify downstream
 ```
 
 `capacity` is the expected number of items, `error_rate` the target false-positive
-probability. Data survives restarts when you pass `filepath`.
+probability. Pass `filepath` to persist the filter across restarts.
 
 ## Redis example
 
