@@ -40,4 +40,3 @@ bloom_filters/
 demo_filters/
 demo_persistent.bloom
 *.bloom
-tests/*
