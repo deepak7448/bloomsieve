@@ -5,32 +5,47 @@ build-backend = "hatchling.build"
 [project]
 name = "bloomsieve"
 dynamic = ["version"]
-description = "A high-performance Python Bloom Filter with local mmap persistence and RedisBloom support."
+description = "Persistent mmap Bloom filters for Python with optional RedisBloom integration to avoid unnecessary remote membership checks."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
-    { name = "Deepak prajapati", email = "prajapatideepak244@gmail.com" }
+    { name = "Deepak Prajapati", email = "prajapatideepak244@gmail.com" }
 ]
-keywords = ["bloom-filter", "redis", "redisbloom", "mmap", "cache", "probabilistic-data-structure"]
+keywords = [
+    "bloom-filter",
+    "redis",
+    "redisbloom",
+    "mmap",
+    "probabilistic-data-structure",
+    "membership-testing",
+    "caching",
+    "distributed-systems",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Topic :: Software Development :: Libraries :: Python Modules",
-]
-dependencies = [
-    "redis>=4.0.0",
+    "Topic :: Database",
+    "Topic :: System :: Distributed Computing",
 ]
 
+# Core mode has no runtime dependencies.  Redis is only required for the
+# optional `BloomFilterService` integration, enabled via `pip install bloomsieve[redis]`.
+dependencies = []
+
 [project.optional-dependencies]
+redis = [
+    "redis>=4.0.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
@@ -41,9 +56,23 @@ dev = [
 Homepage = "https://github.com/deepak7448/bloomsieve"
 Repository = "https://github.com/deepak7448/bloomsieve"
 Issues = "https://github.com/deepak7448/bloomsieve/issues"
+Changelog = "https://github.com/deepak7448/bloomsieve/blob/master/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bloomsieve"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "src/bloomsieve/**",
+    "examples/basic_usage.py",
+    "examples/redis_prefilter.py",
+    "tests/**",
+    "docs/**",
+    "benchmarks/**",
+]
 
 [tool.hatch.version]
 path = "src/bloomsieve/__init__.py"
@@ -52,3 +81,17 @@ path = "src/bloomsieve/__init__.py"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "--cov=src/bloomsieve --cov-report=term-missing"
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+exclude = [
+    ".git",
+    ".venv",
+    "dist",
+    "build",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
