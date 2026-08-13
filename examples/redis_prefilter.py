@@ -43,13 +43,13 @@ def main():
 
         # Positive query: the local filter says "possibly present", so RedisBloom
         # verifies and returns the authoritative answer.
-        print("exists('active_sessions', 'session:1001') ->",
-              service.exists(filter_name, "session:1001"))  # True
+        print("exists('active_sessions', 'session:1001') ->", service.exists(filter_name, "session:1001"))  # True
 
         # Negative query: the local filter says "definitely absent", so the answer
         # is returned locally without a single round-trip to Redis.
-        print("exists('active_sessions', 'session:9999') ->",
-              service.exists(filter_name, "session:9999"))  # False, no Redis call
+        print(
+            "exists('active_sessions', 'session:9999') ->", service.exists(filter_name, "session:9999")
+        )  # False, no Redis call
 
     finally:
         client.delete(filter_name)

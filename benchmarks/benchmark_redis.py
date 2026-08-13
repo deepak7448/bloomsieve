@@ -100,14 +100,13 @@ def main() -> None:
         "runs": [],
     }
 
-
     try:
         svc.create_filter(key, n_items, args.error_rate)
         # Fast population via pipeline for setup
         pipe = client.pipeline()
         for i in range(n_items):
             pipe.execute_command("BF.ADD", key, f"item-{i}")
-            svc.add(key, f"item-{i}") # Also add to local mmap
+            svc.add(key, f"item-{i}")  # Also add to local mmap
             if i % 10000 == 0:
                 pipe.execute()
         pipe.execute()
@@ -129,9 +128,7 @@ def main() -> None:
             latent_b, req_b = run_workload(
                 lambda item: bool(counting.execute_command("BF.EXISTS", key, item)), queries, counting
             )
-            latent_s, req_s = run_workload(
-                lambda item: svc.exists(key, item), queries, counting
-            )
+            latent_s, req_s = run_workload(lambda item: svc.exists(key, item), queries, counting)
 
             avoided = req_b - req_s
             avoid_pct = avoided / req_b if req_b else 0
@@ -141,23 +138,25 @@ def main() -> None:
 
             report.append(
                 f"{ratio:>10.0%} {'baseline':>15} {req_b:>10,} {'-':>10} {'-':>9} "
-                f"{sum(latent_b):>9.2f} {p_b['p50']*1e6:>9.1f} {p_b['p95']*1e6:>9.1f} {p_b['p99']*1e6:>9.1f}"
+                f"{sum(latent_b):>9.2f} {p_b['p50'] * 1e6:>9.1f} {p_b['p95'] * 1e6:>9.1f} {p_b['p99'] * 1e6:>9.1f}"
             )
             report.append(
                 f"{ratio:>10.0%} {'bloomsieve':>15} {req_s:>10,} {avoided:>10,} {avoid_pct:>8.1%} "
-                f"{sum(latent_s):>9.2f} {p_s['p50']*1e6:>9.1f} {p_s['p95']*1e6:>9.1f} {p_s['p99']*1e6:>9.1f}"
+                f"{sum(latent_s):>9.2f} {p_s['p50'] * 1e6:>9.1f} {p_s['p95'] * 1e6:>9.1f} {p_s['p99'] * 1e6:>9.1f}"
             )
 
-            results["runs"].append({
-                "negative_ratio": ratio,
-                "total_queries": n_queries,
-                "baseline_redis_requests": req_b,
-                "bloomsieve_redis_requests": req_s,
-                "requests_avoided": avoided,
-                "avoidance_rate": avoid_pct,
-                "baseline_p50_us": p_b["p50"] * 1e6,
-                "bloomsieve_p50_us": p_s["p50"] * 1e6,
-            })
+            results["runs"].append(
+                {
+                    "negative_ratio": ratio,
+                    "total_queries": n_queries,
+                    "baseline_redis_requests": req_b,
+                    "bloomsieve_redis_requests": req_s,
+                    "requests_avoided": avoided,
+                    "avoidance_rate": avoid_pct,
+                    "baseline_p50_us": p_b["p50"] * 1e6,
+                    "bloomsieve_p50_us": p_s["p50"] * 1e6,
+                }
+            )
 
     finally:
         try:

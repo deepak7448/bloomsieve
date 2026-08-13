@@ -75,17 +75,17 @@ def main() -> None:
 
         obs_rate = false_positives / n_queries
 
-        report.append(
-            f"{err_rate:>12.5f} {obs_rate:>12.5f} {false_positives:>10,} {fmt_bytes(bf.total_size):>12}"
-        )
+        report.append(f"{err_rate:>12.5f} {obs_rate:>12.5f} {false_positives:>10,} {fmt_bytes(bf.total_size):>12}")
 
-        results["runs"].append({
-            "configured_error_rate": err_rate,
-            "observed_error_rate": obs_rate,
-            "false_positives": false_positives,
-            "total_size_bytes": bf.total_size,
-            "redis_requests_caused_by_fp": false_positives,
-        })
+        results["runs"].append(
+            {
+                "configured_error_rate": err_rate,
+                "observed_error_rate": obs_rate,
+                "false_positives": false_positives,
+                "total_size_bytes": bf.total_size,
+                "redis_requests_caused_by_fp": false_positives,
+            }
+        )
 
     print_report(report)
     save_json(results, args.output)

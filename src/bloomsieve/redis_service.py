@@ -198,9 +198,7 @@ class BloomFilterService:
             self._init_mmap(name, cap, err)
 
         try:
-            self.redis.execute_command(
-                "BF.RESERVE", name, str(err), str(cap), "EXPANSION", str(self.expansion)
-            )
+            self.redis.execute_command("BF.RESERVE", name, str(err), str(cap), "EXPANSION", str(self.expansion))
             return True
         except Exception as exc:
             message = str(exc)
@@ -321,11 +319,7 @@ class BloomFilterService:
                 k_str = k.decode("utf-8") if isinstance(k, bytes) else str(k)
                 info_dict[k_str] = info[i + 1]
 
-        inserted = (
-            info_dict.get("Number of items inserted")
-            or info_dict.get("number of items inserted")
-            or 0
-        )
+        inserted = info_dict.get("Number of items inserted") or info_dict.get("number of items inserted") or 0
         capacity = (
             info_dict.get("max_elements")
             or info_dict.get("maxElements")

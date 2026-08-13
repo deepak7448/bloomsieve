@@ -108,6 +108,7 @@ def main() -> None:
     # pybloomer
     try:
         import pybloomer
+
         path_pb = os.path.join(workdir, "pybloomer.bloom")
         benchmark_impl(
             "pybloomer",
@@ -123,6 +124,7 @@ def main() -> None:
     # pybloomfiltermmap3
     try:
         import pybloomfilter
+
         path_pb3 = os.path.join(workdir, "pybloomfilter3.bloom")
         benchmark_impl(
             "pybloomfiltermmap3",

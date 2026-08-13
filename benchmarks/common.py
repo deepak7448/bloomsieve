@@ -115,6 +115,7 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
 def bloomsieve_version() -> str:
     try:
         import bloomsieve
+
         return bloomsieve.__version__
     except (ImportError, AttributeError):
         return "unknown"
@@ -123,6 +124,7 @@ def bloomsieve_version() -> str:
 def make_queries(n_items: int, n_queries: int, negative_ratio: float, seed: int) -> list[str]:
     """Deterministic query set of ``n_queries`` with ``negative_ratio`` absent entries."""
     import random
+
     rng = random.Random(seed)
     n_negative = int(n_queries * negative_ratio)
     n_positive = n_queries - n_negative
@@ -135,6 +137,7 @@ def make_queries(n_items: int, n_queries: int, negative_ratio: float, seed: int)
 
 class SimLatencyRedis:
     """A wrapper for a Redis client that injects simulated network latency and counts existence queries."""
+
     def __init__(self, client: Any, rtt_seconds: float) -> None:
         self.client = client
         self.rtt_seconds = rtt_seconds

@@ -40,9 +40,7 @@ class TestCreateFilter:
     def test_creates_filter(self, service):
         service.redis.execute_command.return_value = "OK"
         assert service.create_filter("test_filter", 5000, 0.01) is True
-        service.redis.execute_command.assert_called_with(
-            "BF.RESERVE", "test_filter", "0.01", "5000", "EXPANSION", "2"
-        )
+        service.redis.execute_command.assert_called_with("BF.RESERVE", "test_filter", "0.01", "5000", "EXPANSION", "2")
 
     def test_already_exists_is_success(self, service):
         service.redis.execute_command.side_effect = Exception("ERR item exists")

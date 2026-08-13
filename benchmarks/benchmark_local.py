@@ -91,15 +91,15 @@ def main() -> None:
         "insert_ops_sec": args.capacity / insert_seconds if insert_seconds > 0 else 0,
         "positive_lookup": {
             "ops_sec": args.iterations / pos_sec,
-            "p50_us": p_pos['p50'] * 1e6,
-            "p95_us": p_pos['p95'] * 1e6,
-            "p99_us": p_pos['p99'] * 1e6,
+            "p50_us": p_pos["p50"] * 1e6,
+            "p95_us": p_pos["p95"] * 1e6,
+            "p99_us": p_pos["p99"] * 1e6,
         },
         "negative_lookup": {
             "ops_sec": args.iterations / neg_sec,
-            "p50_us": p_neg['p50'] * 1e6,
-            "p95_us": p_neg['p95'] * 1e6,
-            "p99_us": p_neg['p99'] * 1e6,
+            "p50_us": p_neg["p50"] * 1e6,
+            "p95_us": p_neg["p95"] * 1e6,
+            "p99_us": p_neg["p99"] * 1e6,
         },
     }
 
@@ -148,15 +148,15 @@ def main() -> None:
         "insert_ops_sec": args.capacity / insert_seconds if insert_seconds > 0 else 0,
         "positive_lookup": {
             "ops_sec": args.iterations / pos_sec,
-            "p50_us": p_pos['p50'] * 1e6,
-            "p95_us": p_pos['p95'] * 1e6,
-            "p99_us": p_pos['p99'] * 1e6,
+            "p50_us": p_pos["p50"] * 1e6,
+            "p95_us": p_pos["p95"] * 1e6,
+            "p99_us": p_pos["p99"] * 1e6,
         },
         "negative_lookup": {
             "ops_sec": args.iterations / neg_sec,
-            "p50_us": p_neg['p50'] * 1e6,
-            "p95_us": p_neg['p95'] * 1e6,
-            "p99_us": p_neg['p99'] * 1e6,
+            "p50_us": p_neg["p50"] * 1e6,
+            "p95_us": p_neg["p95"] * 1e6,
+            "p99_us": p_neg["p99"] * 1e6,
         },
     }
 
@@ -166,6 +166,7 @@ def main() -> None:
 
 def platform_python_version() -> str:
     import sys
+
     return sys.version.split()[0]
 
 

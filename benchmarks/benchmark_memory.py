@@ -84,19 +84,22 @@ def main() -> None:
             f"{fmt_ops_per_sec(capacity, insert_sec):>12} {fmt_ops_per_sec(lookups, lookup_sec):>12}"
         )
 
-        results["runs"].append({
-            "capacity": capacity,
-            "error_rate": args.error_rate,
-            "mmap_file_size_bytes": actual_size,
-            "initialization_ms": init_ms,
-            "insert_ops_sec": insert_throughput,
-            "lookup_ops_sec": lookup_throughput,
-        })
+        results["runs"].append(
+            {
+                "capacity": capacity,
+                "error_rate": args.error_rate,
+                "mmap_file_size_bytes": actual_size,
+                "initialization_ms": init_ms,
+                "insert_ops_sec": insert_throughput,
+                "lookup_ops_sec": lookup_throughput,
+            }
+        )
 
         bf.close()
 
     print_report(report)
     save_json(results, args.output)
+
 
 if __name__ == "__main__":
     main()

@@ -136,9 +136,7 @@ class BloomFilter:
         except (struct.error, OSError) as exc:
             self._file.close()
             self._file = None
-            raise BloomFilterFileError(
-                f"unreadable Bloom filter header in {self.filepath!r}: {exc}"
-            ) from exc
+            raise BloomFilterFileError(f"unreadable Bloom filter header in {self.filepath!r}: {exc}") from exc
 
         bit_area = m // 8
         full_size = _HEADER_SIZE + bit_area

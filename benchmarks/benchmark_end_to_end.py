@@ -133,9 +133,7 @@ def main() -> None:
                 lambda item: bool(counting.execute_command("BF.EXISTS", key, item)), queries, counting
             )
             # Bloomsieve
-            latent_s, req_s = run_workload(
-                lambda item: svc.exists(key, item), queries, counting
-            )
+            latent_s, req_s = run_workload(lambda item: svc.exists(key, item), queries, counting)
 
             avoided = req_b - req_s
             avoid_pct = avoided / req_b if req_b else 0
@@ -145,23 +143,25 @@ def main() -> None:
 
             report.append(
                 f"{rtt_ms:>8.1f} {'baseline':>15} {req_b:>10,} {'-':>10} {'-':>9} "
-                f"{sum(latent_b):>9.2f} {p_b['p50']*1e3:>9.2f} {p_b['p95']*1e3:>9.2f} {p_b['p99']*1e3:>9.2f}"
+                f"{sum(latent_b):>9.2f} {p_b['p50'] * 1e3:>9.2f} {p_b['p95'] * 1e3:>9.2f} {p_b['p99'] * 1e3:>9.2f}"
             )
             report.append(
                 f"{rtt_ms:>8.1f} {'bloomsieve':>15} {req_s:>10,} {avoided:>10,} {avoid_pct:>8.1%} "
-                f"{sum(latent_s):>9.2f} {p_s['p50']*1e3:>9.2f} {p_s['p95']*1e3:>9.2f} {p_s['p99']*1e3:>9.2f}"
+                f"{sum(latent_s):>9.2f} {p_s['p50'] * 1e3:>9.2f} {p_s['p95'] * 1e3:>9.2f} {p_s['p99'] * 1e3:>9.2f}"
             )
 
-            results["runs"].append({
-                "simulated_rtt_ms": rtt_ms,
-                "total_queries": n_queries,
-                "baseline_redis_requests": req_b,
-                "bloomsieve_redis_requests": req_s,
-                "requests_avoided": avoided,
-                "avoidance_rate": avoid_pct,
-                "baseline_p50_ms": p_b["p50"] * 1e3,
-                "bloomsieve_p50_ms": p_s["p50"] * 1e3,
-            })
+            results["runs"].append(
+                {
+                    "simulated_rtt_ms": rtt_ms,
+                    "total_queries": n_queries,
+                    "baseline_redis_requests": req_b,
+                    "bloomsieve_redis_requests": req_s,
+                    "requests_avoided": avoided,
+                    "avoidance_rate": avoid_pct,
+                    "baseline_p50_ms": p_b["p50"] * 1e3,
+                    "bloomsieve_p50_ms": p_s["p50"] * 1e3,
+                }
+            )
 
     finally:
         try:
@@ -173,6 +173,7 @@ def main() -> None:
 
     print_report(report)
     save_json(results, args.output)
+
 
 if __name__ == "__main__":
     main()

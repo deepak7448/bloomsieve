@@ -64,18 +64,18 @@ def lookup_user(user_id: str):
     bloom = BloomFilter(
         capacity=10_000_000,
         error_rate=0.001,
-        filepath="./users.bloom",   # optional: persists the filter to disk
+        filepath="./users.bloom",  # optional: persists the filter to disk
     )
-    bloom.add("user:123")           # normal application write path
+    bloom.add("user:123")  # normal application write path
 
     if user_id not in bloom:
-        return None                 # definite answer, nothing more to do
+        return None  # definite answer, nothing more to do
 
     return f"look up {user_id} in your database for an exact answer"
 
 
-print(lookup_user("user:999"))      # None  – rejected by the local filter
-print(lookup_user("user:123"))      # possible positive -> verify downstream
+print(lookup_user("user:999"))  # None  – rejected by the local filter
+print(lookup_user("user:123"))  # possible positive -> verify downstream
 ```
 
 `capacity` is the expected number of items, `error_rate` the target false-positive
@@ -93,15 +93,15 @@ svc = BloomFilterService(
     redis_client=client,
     capacity=1_000_000,
     error_rate=0.001,
-    use_mmap=True,                 # enable the local pre-filter
+    use_mmap=True,  # enable the local pre-filter
     mmap_dir="/var/lib/bloomsieve",
 )
 
 svc.create_filter("active_tokens")
 svc.add("active_tokens", "tok_abc")
 
-svc.exists("active_tokens", "tok_xyz")   # False  – answered locally, no network
-svc.exists("active_tokens", "tok_abc")   # True   – possible positive, verified in Redis
+svc.exists("active_tokens", "tok_xyz")  # False  – answered locally, no network
+svc.exists("active_tokens", "tok_abc")  # True   – possible positive, verified in Redis
 ```
 
 ## How it works
@@ -191,8 +191,9 @@ BloomFilter(capacity: int, error_rate: float, filepath: str | None = None)
 ### `BloomFilterService`
 
 ```python
-BloomFilterService(redis_client, capacity=1_000_000, error_rate=0.001,
-                   expansion=2, use_mmap=False, mmap_dir="bloom_filters")
+BloomFilterService(
+    redis_client, capacity=1_000_000, error_rate=0.001, expansion=2, use_mmap=False, mmap_dir="bloom_filters"
+)
 ```
 
 - `create_filter(name, capacity=None, error_rate=None) -> bool` — reserve via `BF.RESERVE`
