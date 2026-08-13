@@ -1,16 +1,17 @@
-"""Redis workload benchmark: RedisBloom alone vs. Bloomsieve pre-filter.
+"""End-to-End benchmark for Bloomsieve.
 
-Measures the number of `BF.EXISTS` network requests avoided for negative-heavy workloads.
-No simulated network latency; measures raw performance against the provided Redis URL.
+This benchmark simulates different network latencies (RTT) to Redis, demonstrating
+the increasing value of the local Bloom filter as network latency increases.
 
 Run:
-    python benchmarks/benchmark_redis.py --help
+    python benchmarks/benchmark_end_to_end.py --help
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import sys
 import tempfile
 import time
 from typing import Any, Callable
@@ -19,7 +20,6 @@ import redis
 from common import (
     add_common_args,
     bloomsieve_version,
-    fmt_bytes,
     hardware_summary,
     make_queries,
     percentiles,
@@ -46,15 +46,24 @@ def run_workload(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Redis workload benchmark")
+    parser = argparse.ArgumentParser(description="End-to-end benchmark with network latency simulation")
     add_common_args(parser)
     parser.add_argument(
-        "--negative-ratios",
+        "--negative-ratio",
+        type=float,
+        default=0.90,
+        help="Negative query ratio (default: 0.90).",
+    )
+    parser.add_argument(
+        "--rtts-ms",
         type=float,
         nargs="+",
-        default=[0.50, 0.75, 0.90, 0.95, 0.99],
-        help="List of negative query ratios to test.",
+        default=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0],
+        help="List of simulated network RTTs in milliseconds.",
     )
+    # Default to smaller queries for end-to-end so it doesn't take forever with simulated latency
+    parser.set_defaults(capacity=10_000) 
+    
     args = parser.parse_args()
 
     client = redis.from_url(args.redis_url, socket_timeout=5)
@@ -63,14 +72,33 @@ def main() -> None:
     except Exception as e:
         print(f"Failed to connect to Redis at {args.redis_url}: {e}")
         return
-
-    counting = SimLatencyRedis(client, rtt_seconds=0.0)
-    
+        
     n_items = args.capacity
     n_queries = n_items
+    
+    report = [
+        "# End-to-end latency benchmark",
+        hardware_summary(),
+        f"Bloomsieve version: {bloomsieve_version()}",
+        f"Items in filter: {n_items:,} | Queries: {n_queries:,}",
+        f"Negative ratio: {args.negative_ratio:.0%}",
+        f"Simulated Latency: Yes",
+        "",
+    ]
+    
+    results: dict[str, Any] = {
+        "benchmark": "end_to_end_latency",
+        "bloomsieve_version": bloomsieve_version(),
+        "python_version": sys.version.split()[0],
+        "negative_ratio": args.negative_ratio,
+        "queries": n_queries,
+        "runs": [],
+    }
 
-    key = f"bloomsieve:bench:{os.getpid()}"
-    workdir = tempfile.mkdtemp(prefix="bloomsieve_bench_redis_")
+    key = f"bloomsieve:bench_e2e:{os.getpid()}"
+    workdir = tempfile.mkdtemp(prefix="bloomsieve_bench_e2e_")
+    
+    counting = SimLatencyRedis(client, rtt_seconds=0.0)
     svc = BloomFilterService(
         redis_client=counting,
         capacity=n_items,
@@ -79,51 +107,27 @@ def main() -> None:
         mmap_dir=workdir,
     )
 
-    report = [
-        "# Redis workload benchmark",
-        hardware_summary(),
-        f"Bloomsieve version: {bloomsieve_version()}",
-        f"Items in filter: {n_items:,} | Queries: {n_queries:,} | Error rate: {args.error_rate}",
-        f"Redis: {args.redis_url}",
-        "",
-    ]
-
-    results: dict[str, Any] = {
-        "benchmark": "redis_membership",
-        "bloomsieve_version": bloomsieve_version(),
-        "python_version": sys.version.split()[0],
-        "redis_url": args.redis_url,
-        "capacity": n_items,
-        "queries": n_queries,
-        "error_rate": args.error_rate,
-        "runs": [],
-    }
-
-    import sys
-
     try:
         svc.create_filter(key, n_items, args.error_rate)
-        # Fast population via pipeline for setup
         pipe = client.pipeline()
         for i in range(n_items):
             pipe.execute_command("BF.ADD", key, f"item-{i}")
-            svc.add(key, f"item-{i}") # Also add to local mmap
+            svc.add(key, f"item-{i}")
             if i % 10000 == 0:
                 pipe.execute()
         pipe.execute()
-
-        local_file_bytes = os.path.getsize(svc._mmap_path(key))
-        redis_bytes = int(client.execute_command("MEMORY", "USAGE", key) or 0)
-        report.append(f"RedisBloom memory: {fmt_bytes(redis_bytes)}  Local mmap file: {fmt_bytes(local_file_bytes)}")
-        report.append("")
         
-        header = f"{'neg ratio':>10} {'path':>15} {'requests':>10} {'avoided':>10} {'avoid %':>9} {'time/s':>9} {'p50(us)':>9} {'p95(us)':>9} {'p99(us)':>9}"
+        header = f"{'rtt(ms)':>8} {'path':>15} {'requests':>10} {'avoided':>10} {'avoid %':>9} {'time/s':>9} {'p50(ms)':>9} {'p95(ms)':>9} {'p99(ms)':>9}"
         report.append(header)
-
-        for ratio in args.negative_ratios:
-            queries = make_queries(n_items, n_queries, ratio, seed=n_items + int(ratio * 100))
+        
+        queries = make_queries(n_items, n_queries, args.negative_ratio, seed=n_items)
+        
+        for rtt_ms in args.rtts_ms:
+            counting.rtt_seconds = rtt_ms / 1000.0
             
+            # Baseline
             latent_b, req_b = run_workload(lambda item: bool(counting.execute_command("BF.EXISTS", key, item)), queries, counting)
+            # Bloomsieve
             latent_s, req_s = run_workload(lambda item: svc.exists(key, item), queries, counting)
             
             avoided = req_b - req_s
@@ -131,25 +135,25 @@ def main() -> None:
             
             p_b = percentiles(latent_b)
             p_s = percentiles(latent_s)
-
+            
             report.append(
-                f"{ratio:>10.0%} {'baseline':>15} {req_b:>10,} {'-':>10} {'-':>9} "
-                f"{sum(latent_b):>9.2f} {p_b['p50']*1e6:>9.1f} {p_b['p95']*1e6:>9.1f} {p_b['p99']*1e6:>9.1f}"
+                f"{rtt_ms:>8.1f} {'baseline':>15} {req_b:>10,} {'-':>10} {'-':>9} "
+                f"{sum(latent_b):>9.2f} {p_b['p50']*1e3:>9.2f} {p_b['p95']*1e3:>9.2f} {p_b['p99']*1e3:>9.2f}"
             )
             report.append(
-                f"{ratio:>10.0%} {'bloomsieve':>15} {req_s:>10,} {avoided:>10,} {avoid_pct:>8.1%} "
-                f"{sum(latent_s):>9.2f} {p_s['p50']*1e6:>9.1f} {p_s['p95']*1e6:>9.1f} {p_s['p99']*1e6:>9.1f}"
+                f"{rtt_ms:>8.1f} {'bloomsieve':>15} {req_s:>10,} {avoided:>10,} {avoid_pct:>8.1%} "
+                f"{sum(latent_s):>9.2f} {p_s['p50']*1e3:>9.2f} {p_s['p95']*1e3:>9.2f} {p_s['p99']*1e3:>9.2f}"
             )
-
+            
             results["runs"].append({
-                "negative_ratio": ratio,
+                "simulated_rtt_ms": rtt_ms,
                 "total_queries": n_queries,
                 "baseline_redis_requests": req_b,
                 "bloomsieve_redis_requests": req_s,
                 "requests_avoided": avoided,
                 "avoidance_rate": avoid_pct,
-                "baseline_p50_us": p_b["p50"] * 1e6,
-                "bloomsieve_p50_us": p_s["p50"] * 1e6,
+                "baseline_p50_ms": p_b["p50"] * 1e3,
+                "bloomsieve_p50_ms": p_s["p50"] * 1e3,
             })
             
     finally:
@@ -162,7 +166,6 @@ def main() -> None:
 
     print_report(report)
     save_json(results, args.output)
-
 
 if __name__ == "__main__":
     main()

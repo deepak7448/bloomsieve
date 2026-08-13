@@ -9,7 +9,7 @@ from .core import BloomFilter, BloomFilterFileError
 from .redis_service import BloomFilterService
 from .utils import get_hash_indices, get_optimal_m_k
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "BloomFilter",

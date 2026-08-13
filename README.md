@@ -117,22 +117,26 @@ svc.exists("active_tokens", "tok_abc")   # True   – possible positive, verifie
 See [docs/architecture.md](docs/architecture.md) for the full design including the
 on-disk format, failure modes, and consistency model.
 
-## Performance
+## Benchmarks
 
-Micro-benchmarks of the local filter run at ~200–300k lookups/s with sub-10µs
-p50 latencies. The workload A/B benchmark measures what matters — Redis requests
-removed:
+Bloomsieve is designed to reduce remote Redis membership checks,
+especially when the workload contains many negative lookups.
 
-| negative workload | baseline `BF.EXISTS` | Bloomsieve requests | avoided |
-| --- | --- | --- | --- |
-| 50% | 20,000 | 10,011 | 50% |
-| 75% | 20,000 | 5,013 | 75% |
-| 90% | 20,000 | 2,014 | 90% |
-| 99% | 20,000 | 216 | 99% |
+See the full reproducible methodology in `docs/benchmarks.md`.
 
-Measured on a laptop over localhost; remote Redis deployments amplify the latency
-win because each removed request saves a round-trip. Full methodology, hardware,
-and how to reproduce: [docs/benchmarks.md](docs/benchmarks.md).
+### Key metric
+
+Redis requests avoided:
+
+| Negative workload | Redis requests avoided |
+|---:|---:|
+| 50% | (run benchmark to measure) |
+| 75% | (run benchmark to measure) |
+| 90% | (run benchmark to measure) |
+| 95% | (run benchmark to measure) |
+| 99% | (run benchmark to measure) |
+
+*Results depend heavily on hardware, network configuration, and the specific dataset. Run `benchmarks/benchmark_redis.py` to measure exactly how many requests are avoided in your environment.*
 
 ## When should I use Bloomsieve?
 
@@ -254,15 +258,7 @@ pytest                                 # unit tests (no Redis required)
 BLOOMSIEVE_REDIS_URL=redis://localhost:6379/0 pytest
 ```
 
-## Benchmarks
 
-```bash
-python benchmarks/benchmark_core.py    # standalone in-memory filter
-python benchmarks/benchmark_mmap.py    # persistent mmap filter
-BLOOMSIEVE_REDIS_URL=redis://localhost:6379/0 python benchmarks/benchmark_redis.py
-```
-
-See [docs/benchmarks.md](docs/benchmarks.md) for methodology and results.
 
 ## Contributing
 
