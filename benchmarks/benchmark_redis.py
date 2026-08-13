@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import tempfile
 import time
 from typing import Any, Callable
 
 import redis
 from common import (
+    SimLatencyRedis,
     add_common_args,
     bloomsieve_version,
     fmt_bytes,
@@ -25,7 +27,6 @@ from common import (
     percentiles,
     print_report,
     save_json,
-    SimLatencyRedis,
 )
 
 from bloomsieve import BloomFilterService
@@ -65,7 +66,7 @@ def main() -> None:
         return
 
     counting = SimLatencyRedis(client, rtt_seconds=0.0)
-    
+
     n_items = args.capacity
     n_queries = n_items
 
@@ -99,7 +100,6 @@ def main() -> None:
         "runs": [],
     }
 
-    import sys
 
     try:
         svc.create_filter(key, n_items, args.error_rate)
@@ -116,19 +116,26 @@ def main() -> None:
         redis_bytes = int(client.execute_command("MEMORY", "USAGE", key) or 0)
         report.append(f"RedisBloom memory: {fmt_bytes(redis_bytes)}  Local mmap file: {fmt_bytes(local_file_bytes)}")
         report.append("")
-        
-        header = f"{'neg ratio':>10} {'path':>15} {'requests':>10} {'avoided':>10} {'avoid %':>9} {'time/s':>9} {'p50(us)':>9} {'p95(us)':>9} {'p99(us)':>9}"
+
+        header = (
+            f"{'neg ratio':>10} {'path':>15} {'requests':>10} {'avoided':>10} {'avoid %':>9} "
+            f"{'time/s':>9} {'p50(us)':>9} {'p95(us)':>9} {'p99(us)':>9}"
+        )
         report.append(header)
 
         for ratio in args.negative_ratios:
             queries = make_queries(n_items, n_queries, ratio, seed=n_items + int(ratio * 100))
-            
-            latent_b, req_b = run_workload(lambda item: bool(counting.execute_command("BF.EXISTS", key, item)), queries, counting)
-            latent_s, req_s = run_workload(lambda item: svc.exists(key, item), queries, counting)
-            
+
+            latent_b, req_b = run_workload(
+                lambda item: bool(counting.execute_command("BF.EXISTS", key, item)), queries, counting
+            )
+            latent_s, req_s = run_workload(
+                lambda item: svc.exists(key, item), queries, counting
+            )
+
             avoided = req_b - req_s
             avoid_pct = avoided / req_b if req_b else 0
-            
+
             p_b = percentiles(latent_b)
             p_s = percentiles(latent_s)
 
@@ -151,7 +158,7 @@ def main() -> None:
                 "baseline_p50_us": p_b["p50"] * 1e6,
                 "bloomsieve_p50_us": p_s["p50"] * 1e6,
             })
-            
+
     finally:
         try:
             client.delete(key)

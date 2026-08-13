@@ -36,7 +36,7 @@ def main() -> None:
         help="List of error rates to test.",
     )
     args = parser.parse_args()
-    
+
     n_items = args.capacity
     n_queries = args.iterations
 
@@ -47,7 +47,7 @@ def main() -> None:
         f"Capacity: {n_items:,} | Absent Queries: {n_queries:,}",
         "",
     ]
-    
+
     results: dict[str, Any] = {
         "benchmark": "error_rates",
         "bloomsieve_version": bloomsieve_version(),
@@ -59,26 +59,26 @@ def main() -> None:
 
     header = f"{'config err':>12} {'obs err':>12} {'fp count':>10} {'filter size':>12}"
     report.append(header)
-    
+
     for err_rate in args.error_rates:
         bf = BloomFilter(capacity=n_items, error_rate=err_rate)
-        
+
         # Populate
         for i in range(n_items):
             bf.add(f"item-{i}")
-            
+
         # Test absent queries
         false_positives = 0
         for i in range(n_queries):
             if f"absent-{i}" in bf:
                 false_positives += 1
-                
+
         obs_rate = false_positives / n_queries
-        
+
         report.append(
             f"{err_rate:>12.5f} {obs_rate:>12.5f} {false_positives:>10,} {fmt_bytes(bf.total_size):>12}"
         )
-        
+
         results["runs"].append({
             "configured_error_rate": err_rate,
             "observed_error_rate": obs_rate,
@@ -86,7 +86,7 @@ def main() -> None:
             "total_size_bytes": bf.total_size,
             "redis_requests_caused_by_fp": false_positives,
         })
-        
+
     print_report(report)
     save_json(results, args.output)
 

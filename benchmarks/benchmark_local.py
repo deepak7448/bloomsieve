@@ -66,13 +66,13 @@ def main() -> None:
     mem_bf = BloomFilter(capacity=args.capacity, error_rate=args.error_rate)
     mem_init_time = time.perf_counter() - start
     report.append(f"Initialization: {mem_init_time * 1000:.2f} ms")
-    
+
     _, insert_seconds = time_loop(lambda i: mem_bf.add(f"key-{i}"), args.capacity)
     report.append(f"Insert: {fmt_ops_per_sec(args.capacity, insert_seconds)} ops/s ({args.capacity:,} items)")
 
     pos_samples, pos_sec = time_loop(lambda i: mem_bf.__contains__(f"key-{i % args.capacity}"), args.iterations)
     neg_samples, neg_sec = time_loop(lambda i: mem_bf.__contains__(f"absent-{i}"), args.iterations)
-    
+
     p_pos = percentiles(pos_samples)
     p_neg = percentiles(neg_samples)
     report.append(
@@ -89,27 +89,37 @@ def main() -> None:
     results["modes"]["memory"] = {
         "initialization_ms": mem_init_time * 1000,
         "insert_ops_sec": args.capacity / insert_seconds if insert_seconds > 0 else 0,
-        "positive_lookup": {"ops_sec": args.iterations / pos_sec, "p50_us": p_pos['p50'] * 1e6, "p95_us": p_pos['p95'] * 1e6, "p99_us": p_pos['p99'] * 1e6},
-        "negative_lookup": {"ops_sec": args.iterations / neg_sec, "p50_us": p_neg['p50'] * 1e6, "p95_us": p_neg['p95'] * 1e6, "p99_us": p_neg['p99'] * 1e6},
+        "positive_lookup": {
+            "ops_sec": args.iterations / pos_sec,
+            "p50_us": p_pos['p50'] * 1e6,
+            "p95_us": p_pos['p95'] * 1e6,
+            "p99_us": p_pos['p99'] * 1e6,
+        },
+        "negative_lookup": {
+            "ops_sec": args.iterations / neg_sec,
+            "p50_us": p_neg['p50'] * 1e6,
+            "p95_us": p_neg['p95'] * 1e6,
+            "p99_us": p_neg['p99'] * 1e6,
+        },
     }
 
     # Run mmap benchmark
     report.append("\n## Mmap Filter")
     workdir = tempfile.mkdtemp(prefix="bloomsieve_bench_local_")
     path = os.path.join(workdir, "filter.bloom")
-    
+
     start = time.perf_counter()
     mmap_bf = BloomFilter(capacity=args.capacity, error_rate=args.error_rate, filepath=path)
     mmap_init_time = time.perf_counter() - start
     report.append(f"Initialization: {mmap_init_time * 1000:.2f} ms")
     report.append(f"Backing file: {path} (size: {fmt_bytes(mmap_bf.total_size)})")
-    
+
     _, insert_seconds = time_loop(lambda i: mmap_bf.add(f"key-{i}"), args.capacity)
     report.append(f"Insert: {fmt_ops_per_sec(args.capacity, insert_seconds)} ops/s ({args.capacity:,} items)")
 
     pos_samples, pos_sec = time_loop(lambda i: mmap_bf.__contains__(f"key-{i % args.capacity}"), args.iterations)
     neg_samples, neg_sec = time_loop(lambda i: mmap_bf.__contains__(f"absent-{i}"), args.iterations)
-    
+
     p_pos = percentiles(pos_samples)
     p_neg = percentiles(neg_samples)
     report.append(
@@ -136,8 +146,18 @@ def main() -> None:
         "reopen_ms": reopen_time * 1000,
         "file_size_bytes": os.path.getsize(path),
         "insert_ops_sec": args.capacity / insert_seconds if insert_seconds > 0 else 0,
-        "positive_lookup": {"ops_sec": args.iterations / pos_sec, "p50_us": p_pos['p50'] * 1e6, "p95_us": p_pos['p95'] * 1e6, "p99_us": p_pos['p99'] * 1e6},
-        "negative_lookup": {"ops_sec": args.iterations / neg_sec, "p50_us": p_neg['p50'] * 1e6, "p95_us": p_neg['p95'] * 1e6, "p99_us": p_neg['p99'] * 1e6},
+        "positive_lookup": {
+            "ops_sec": args.iterations / pos_sec,
+            "p50_us": p_pos['p50'] * 1e6,
+            "p95_us": p_pos['p95'] * 1e6,
+            "p99_us": p_pos['p99'] * 1e6,
+        },
+        "negative_lookup": {
+            "ops_sec": args.iterations / neg_sec,
+            "p50_us": p_neg['p50'] * 1e6,
+            "p95_us": p_neg['p95'] * 1e6,
+            "p99_us": p_neg['p99'] * 1e6,
+        },
     }
 
     print_report(report)

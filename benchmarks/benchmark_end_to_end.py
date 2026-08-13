@@ -18,6 +18,7 @@ from typing import Any, Callable
 
 import redis
 from common import (
+    SimLatencyRedis,
     add_common_args,
     bloomsieve_version,
     hardware_summary,
@@ -25,7 +26,6 @@ from common import (
     percentiles,
     print_report,
     save_json,
-    SimLatencyRedis,
 )
 
 from bloomsieve import BloomFilterService
@@ -62,8 +62,8 @@ def main() -> None:
         help="List of simulated network RTTs in milliseconds.",
     )
     # Default to smaller queries for end-to-end so it doesn't take forever with simulated latency
-    parser.set_defaults(capacity=10_000) 
-    
+    parser.set_defaults(capacity=10_000)
+
     args = parser.parse_args()
 
     client = redis.from_url(args.redis_url, socket_timeout=5)
@@ -72,20 +72,20 @@ def main() -> None:
     except Exception as e:
         print(f"Failed to connect to Redis at {args.redis_url}: {e}")
         return
-        
+
     n_items = args.capacity
     n_queries = n_items
-    
+
     report = [
         "# End-to-end latency benchmark",
         hardware_summary(),
         f"Bloomsieve version: {bloomsieve_version()}",
         f"Items in filter: {n_items:,} | Queries: {n_queries:,}",
         f"Negative ratio: {args.negative_ratio:.0%}",
-        f"Simulated Latency: Yes",
+        "Simulated Latency: Yes",
         "",
     ]
-    
+
     results: dict[str, Any] = {
         "benchmark": "end_to_end_latency",
         "bloomsieve_version": bloomsieve_version(),
@@ -97,7 +97,7 @@ def main() -> None:
 
     key = f"bloomsieve:bench_e2e:{os.getpid()}"
     workdir = tempfile.mkdtemp(prefix="bloomsieve_bench_e2e_")
-    
+
     counting = SimLatencyRedis(client, rtt_seconds=0.0)
     svc = BloomFilterService(
         redis_client=counting,
@@ -116,26 +116,33 @@ def main() -> None:
             if i % 10000 == 0:
                 pipe.execute()
         pipe.execute()
-        
-        header = f"{'rtt(ms)':>8} {'path':>15} {'requests':>10} {'avoided':>10} {'avoid %':>9} {'time/s':>9} {'p50(ms)':>9} {'p95(ms)':>9} {'p99(ms)':>9}"
+
+        header = (
+            f"{'rtt(ms)':>8} {'path':>15} {'requests':>10} {'avoided':>10} {'avoid %':>9} "
+            f"{'time/s':>9} {'p50(ms)':>9} {'p95(ms)':>9} {'p99(ms)':>9}"
+        )
         report.append(header)
-        
+
         queries = make_queries(n_items, n_queries, args.negative_ratio, seed=n_items)
-        
+
         for rtt_ms in args.rtts_ms:
             counting.rtt_seconds = rtt_ms / 1000.0
-            
+
             # Baseline
-            latent_b, req_b = run_workload(lambda item: bool(counting.execute_command("BF.EXISTS", key, item)), queries, counting)
+            latent_b, req_b = run_workload(
+                lambda item: bool(counting.execute_command("BF.EXISTS", key, item)), queries, counting
+            )
             # Bloomsieve
-            latent_s, req_s = run_workload(lambda item: svc.exists(key, item), queries, counting)
-            
+            latent_s, req_s = run_workload(
+                lambda item: svc.exists(key, item), queries, counting
+            )
+
             avoided = req_b - req_s
             avoid_pct = avoided / req_b if req_b else 0
-            
+
             p_b = percentiles(latent_b)
             p_s = percentiles(latent_s)
-            
+
             report.append(
                 f"{rtt_ms:>8.1f} {'baseline':>15} {req_b:>10,} {'-':>10} {'-':>9} "
                 f"{sum(latent_b):>9.2f} {p_b['p50']*1e3:>9.2f} {p_b['p95']*1e3:>9.2f} {p_b['p99']*1e3:>9.2f}"
@@ -144,7 +151,7 @@ def main() -> None:
                 f"{rtt_ms:>8.1f} {'bloomsieve':>15} {req_s:>10,} {avoided:>10,} {avoid_pct:>8.1%} "
                 f"{sum(latent_s):>9.2f} {p_s['p50']*1e3:>9.2f} {p_s['p95']*1e3:>9.2f} {p_s['p99']*1e3:>9.2f}"
             )
-            
+
             results["runs"].append({
                 "simulated_rtt_ms": rtt_ms,
                 "total_queries": n_queries,
@@ -155,7 +162,7 @@ def main() -> None:
                 "baseline_p50_ms": p_b["p50"] * 1e3,
                 "bloomsieve_p50_ms": p_s["p50"] * 1e3,
             })
-            
+
     finally:
         try:
             client.delete(key)

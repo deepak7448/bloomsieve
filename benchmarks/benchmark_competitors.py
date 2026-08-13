@@ -45,7 +45,7 @@ def main() -> None:
         f"Capacity: {n_items:,} | Error rate: {args.error_rate} | Queries: {n_queries:,}",
         "",
     ]
-    
+
     results: dict[str, Any] = {
         "benchmark": "competitors",
         "bloomsieve_version": bloomsieve_version(),
@@ -60,17 +60,17 @@ def main() -> None:
         start = time.perf_counter()
         obj = create_fn()
         init_sec = time.perf_counter() - start
-        
+
         _, insert_sec = time_loop(lambda i: add_fn(obj, f"item-{i}"), n_items)
-        
+
         # Test lookups
         _, pos_sec = time_loop(lambda i: contains_fn(obj, f"item-{i % n_items}"), n_queries)
         _, neg_sec = time_loop(lambda i: contains_fn(obj, f"absent-{i}"), n_queries)
-        
+
         # Get file size before close (or after, depending on impl)
         if close_fn:
             close_fn(obj)
-            
+
         file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
 
         insert_ops = n_items / insert_sec if insert_sec else 0
@@ -83,7 +83,7 @@ def main() -> None:
         report.append(f"Pos Lookup: {fmt_ops_per_sec(n_queries, pos_sec)} ops/s")
         report.append(f"Neg Lookup: {fmt_ops_per_sec(n_queries, neg_sec)} ops/s")
         report.append("")
-        
+
         results["runs"][name] = {
             "initialization_ms": init_sec * 1000,
             "mmap_file_size_bytes": file_size,
@@ -93,7 +93,7 @@ def main() -> None:
         }
 
     workdir = tempfile.mkdtemp(prefix="bloomsieve_bench_comp_")
-    
+
     # Bloomsieve
     path_bs = os.path.join(workdir, "bloomsieve.bloom")
     benchmark_impl(
@@ -104,7 +104,7 @@ def main() -> None:
         lambda obj: obj.close(),
         path_bs,
     )
-    
+
     # pybloomer
     try:
         import pybloomer
@@ -119,7 +119,7 @@ def main() -> None:
         )
     except ImportError:
         report.append("## pybloomer\n(Not installed - skipping)\n")
-        
+
     # pybloomfiltermmap3
     try:
         import pybloomfilter
