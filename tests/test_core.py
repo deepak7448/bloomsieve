@@ -11,6 +11,7 @@ from bloomsieve import BloomFilter, BloomFilterFileError
 from bloomsieve.utils import MAX_HASHES, get_hash_indices, get_optimal_m_k
 
 HEADER_SIZE = 16
+FILE_ID_SIZE = 24  # trailer: b"BSFILEID" + 16 random bytes
 
 
 def header_of(path):
@@ -126,7 +127,7 @@ class TestMmapFilter:
     def test_file_is_created_with_expected_size(self, tmp_path):
         path = str(tmp_path / "filter.bloom")
         bf = BloomFilter(capacity=1000, error_rate=0.01)
-        expected = HEADER_SIZE + bf.m // 8
+        expected = HEADER_SIZE + bf.m // 8 + FILE_ID_SIZE
         bf2 = BloomFilter(capacity=1000, error_rate=0.01, filepath=path)
         assert path.endswith("filter.bloom")
         assert os.path.getsize(path) == expected
@@ -200,7 +201,7 @@ class TestMmapFilter:
         with caplog.at_level(logging.WARNING):
             bf2 = BloomFilter(capacity=500, error_rate=0.05, filepath=path)
         assert "truncated" in caplog.text
-        assert os.path.getsize(path) == HEADER_SIZE + bf2.m // 8
+        assert os.path.getsize(path) == HEADER_SIZE + bf2.m // 8 + FILE_ID_SIZE
         assert "alice" not in bf2  # fresh filter after recovery
         bf2.close()
 
@@ -237,7 +238,7 @@ class TestMmapFilter:
             bf.add(f"item-{i}")
         bf.close()
         bf = BloomFilter(capacity=1000, error_rate=0.01, filepath=path)
-        assert os.path.getsize(path) == HEADER_SIZE + bf.m // 8
+        assert os.path.getsize(path) == HEADER_SIZE + bf.m // 8 + FILE_ID_SIZE
         assert "item-499" in bf
         bf.close()
 
@@ -389,3 +390,47 @@ def _add_worker(paths, barrier, j):
         for i in range(40):
             bf.add(f"{t}-{j}-{i}")
         bf.close()
+
+
+class TestFileId:
+    def test_every_new_file_gets_a_unique_id(self, tmp_path):
+        ids = set()
+        for i in range(5):
+            with BloomFilter(capacity=100, error_rate=0.01, filepath=str(tmp_path / f"f{i}.bloom")) as bf:
+                assert bf.file_id is not None and len(bf.file_id) == 32
+                ids.add(bf.file_id)
+        assert len(ids) == 5
+        assert BloomFilter(capacity=100, error_rate=0.01).file_id is None
+
+    def test_id_survives_reopen_and_changes_when_recreated(self, tmp_path):
+        path = str(tmp_path / "f.bloom")
+        with BloomFilter(capacity=100, error_rate=0.01, filepath=path) as bf:
+            first = bf.file_id
+        with BloomFilter(capacity=100, error_rate=0.01, filepath=path) as bf:
+            assert bf.file_id == first
+        os.remove(path)
+        with BloomFilter(capacity=100, error_rate=0.01, filepath=path) as bf:
+            assert bf.file_id != first
+
+    def test_pre_0_3_file_without_trailer(self, tmp_path):
+        # A file exactly as 0.2 wrote it: header + bit array, nothing after it.
+        path = str(tmp_path / "old.bloom")
+        with BloomFilter(capacity=100, error_rate=0.01, filepath=path) as bf:
+            bf.add("alice")
+            size = bf.total_size
+        with open(path, "r+b") as fh:
+            fh.truncate(size)
+
+        with BloomFilter(capacity=100, error_rate=0.01, filepath=path) as bf:
+            assert bf.file_id is None
+            assert "alice" in bf
+            new_id = bf._ensure_file_id()
+            assert bf._ensure_file_id() == new_id  # idempotent
+        assert os.path.getsize(path) == size + FILE_ID_SIZE
+        with BloomFilter(capacity=100, error_rate=0.01, filepath=path) as bf:
+            assert bf.file_id == new_id
+            assert "alice" in bf
+
+    def test_ensure_file_id_needs_a_file(self):
+        with pytest.raises(RuntimeError):
+            BloomFilter(capacity=100, error_rate=0.01)._ensure_file_id()

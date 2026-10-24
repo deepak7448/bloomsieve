@@ -117,6 +117,7 @@ class _Mirror:
     __slots__ = (
         "bf",
         "identity",
+        "file_id",
         "checked_at",
         "trusted",
         "generation",
@@ -126,9 +127,14 @@ class _Mirror:
         "marker_written_at",
     )
 
-    def __init__(self, bf: BloomFilter, identity: str) -> None:
+    def __init__(self, bf: BloomFilter, identity: str, file_id: str) -> None:
         self.bf = bf
+        # ``identity`` (device and inode) detects that the path now points at a
+        # different file; it is only compared while this process holds the old file
+        # open, so the inode cannot have been reused.  ``file_id`` (random, stored in
+        # the file) ties a trust marker to one specific file, even across restarts.
         self.identity = identity
+        self.file_id = file_id
         self.checked_at = time.monotonic()
         self.trusted = False
         self.generation: str | None = None
@@ -296,21 +302,21 @@ class BloomFilterService:
 
     # ------------------------------------------------------------------ trust markers
 
-    def _read_marker(self, name: str, identity: str) -> dict[str, Any] | None:
-        """Return the marker for ``name`` if it belongs to the file ``identity``."""
+    def _read_marker(self, name: str, file_id: str) -> dict[str, Any] | None:
+        """Return the marker for ``name`` if it belongs to the file with ``file_id``."""
         try:
             with open(self._mmap_path(name) + _TRUST_SUFFIX, encoding="utf-8") as fh:
                 marker = json.load(fh)
         except (OSError, ValueError):
             return None
-        if not isinstance(marker, dict) or marker.get("identity") != identity:
+        if not isinstance(marker, dict) or marker.get("file_id") != file_id:
             return None
         return marker
 
     def _write_marker(self, name: str, entry: _Mirror) -> bool:
         """Persist the mirror's state; flushes the mirror first so the marker never runs ahead."""
         marker_path = self._mmap_path(name) + _TRUST_SUFFIX
-        marker: dict[str, Any] = {"identity": entry.identity}
+        marker: dict[str, Any] = {"file_id": entry.file_id}
         if self.replicate:
             if entry.generation is None:
                 return False
@@ -344,12 +350,13 @@ class BloomFilterService:
         try:
             bf = BloomFilter(capacity=cap, error_rate=err, filepath=filepath)
             identity = _file_identity(os.fstat(bf._file.fileno()))  # type: ignore[union-attr]
+            file_id = bf._ensure_file_id()
         except Exception as exc:
             logger.warning("failed to open local mmap filter %s at %s: %s", name, filepath, exc)
             return None
 
-        entry = _Mirror(bf, identity)
-        marker = self._read_marker(name, identity)
+        entry = _Mirror(bf, identity, file_id)
+        marker = self._read_marker(name, file_id)
         if self.replicate:
             if marker is not None and isinstance(marker.get("generation"), str):
                 entry.generation = marker["generation"]
@@ -380,7 +387,7 @@ class BloomFilterService:
                     current = None
                 if current == entry.identity:
                     if not self.replicate:
-                        entry.trusted = self._read_marker(name, entry.identity) is not None
+                        entry.trusted = self._read_marker(name, entry.file_id) is not None
                         entry.bf.synced = entry.trusted
                     entry.checked_at = time.monotonic()
                     return entry

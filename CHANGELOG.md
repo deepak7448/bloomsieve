@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Concurrent writers (threads, or processes sharing one file) could lose bits, and
   so produce false negatives, because setting a bit was an unlocked
   read-modify-write. Writes are now serialised with a thread lock plus `flock`.
+- A trust marker could vouch for a deleted and recreated (empty) mirror when
+  the file system reused the inode number, giving wrong "absent" answers (seen on
+  GitHub Actions). Files now carry a random id in a 24-byte trailer (readable by
+  0.2), and markers refer to that id.
 - Two processes creating the same filter file at once could wipe each other's
   bits. New files are now written fully and published atomically.
 - The mirror cache was shared by all `BloomFilterService` instances and keyed by

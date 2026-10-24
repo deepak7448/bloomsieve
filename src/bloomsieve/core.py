@@ -30,6 +30,13 @@ logger = logging.getLogger(__name__)
 _HEADER = struct.Struct("<QQ")
 _HEADER_SIZE = _HEADER.size  # 16 bytes: unsigned m (bit count), unsigned k (hash count)
 
+# Optional trailer after the bit array: a magic word and 16 random bytes that give
+# every file a unique identity.  Inode numbers are not enough, because a deleted
+# file's inode can be reused by the next file created.  Readers only map the header
+# and bit array, so files with a trailer stay readable by older versions.
+_FILE_ID_MAGIC = b"BSFILEID"
+_FILE_ID_SIZE = len(_FILE_ID_MAGIC) + 16
+
 
 def _publish_file(path: str, m: int, k: int, replace: bool) -> bool:
     """Write a complete, zeroed filter file with geometry ``(m, k)`` and move it into place.
@@ -46,6 +53,8 @@ def _publish_file(path: str, m: int, k: int, replace: bool) -> bool:
             # Extending with truncate yields zero bytes without writing them, and
             # creates a sparse file where the filesystem supports it.
             fh.truncate(_HEADER_SIZE + m // 8)
+            fh.seek(_HEADER_SIZE + m // 8)
+            fh.write(_FILE_ID_MAGIC + os.urandom(16))
         if replace:
             os.replace(tmp_path, path)
             return True
@@ -87,6 +96,9 @@ class BloomFilter:
         capacity, error_rate: The values passed to the constructor.  When an existing
             file is reopened these are *not* read back from it; ``m`` and ``k`` are the
             authoritative stored configuration.
+        file_id: A random identifier stored in the file's trailer (``None`` for
+            in-memory filters and for files written before 0.3).  A recreated
+            file always gets a new one, even if the file system reuses the inode.
         newly_created: ``True`` when the filter has no pre-existing persistent state
             (in-memory filter, or a file that was freshly created).
         synced: ``True`` when the instance is expected to fully mirror any external
@@ -136,6 +148,7 @@ class BloomFilter:
         self._buf: mmap.mmap | bytearray | None = None
         self._offset = 0
         self._lock = threading.Lock()
+        self.file_id: str | None = None
 
         self.newly_created = True
         self.synced = True
@@ -225,8 +238,41 @@ class BloomFilter:
             raise
         self._buf = self._mmap
         self._offset = _HEADER_SIZE
+        self.file_id = self._read_file_id()
         self.newly_created = False
         self.synced = True
+
+    def _read_file_id(self) -> str | None:
+        assert self._file is not None
+        self._file.seek(self.total_size)
+        trailer = self._file.read(_FILE_ID_SIZE)
+        if len(trailer) == _FILE_ID_SIZE and trailer.startswith(_FILE_ID_MAGIC):
+            return trailer[len(_FILE_ID_MAGIC) :].hex()
+        return None
+
+    def _ensure_file_id(self) -> str:
+        """Return the file's identifier, appending one first if the file has none.
+
+        Files written before 0.3 have no trailer.  Appending it under the write
+        lock is safe for other processes, which only map the header and bit array.
+        """
+        if self.file_id is not None:
+            return self.file_id
+        if self._file is None:
+            raise RuntimeError("only file-backed filters have a file id")
+        self._acquire_write()
+        try:
+            self.file_id = self._read_file_id()  # another process may have added it
+            if self.file_id is None:
+                trailer = _FILE_ID_MAGIC + os.urandom(16)
+                self._file.seek(self.total_size)
+                self._file.write(trailer)
+                self._file.truncate(self.total_size + _FILE_ID_SIZE)
+                self._file.flush()
+                self.file_id = trailer[len(_FILE_ID_MAGIC) :].hex()
+        finally:
+            self._release_write()
+        return self.file_id
 
     # ------------------------------------------------------------------ locking
 

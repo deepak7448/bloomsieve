@@ -20,7 +20,15 @@ offset  size  meaning
 0       8     m — number of bits (unsigned 64-bit, little-endian)
 8       8     k — number of hash functions (unsigned 64-bit, little-endian)
 16      m//8  bit array (ones = possibly present); bit i is (byte 16 + i//8) >> (i%8)
+16+m//8 24    optional trailer: b"BSFILEID" + 16 random bytes (the file id)
 ```
+
+The trailer gives every file a unique id. Trust markers refer to that id, not
+to the inode number, because file systems reuse a deleted file's inode for the
+next new file (seen on GitHub Actions runners), which would let a leftover marker
+vouch for a fresh, empty file. Readers map only the header and bit array, so files
+with a trailer remain readable by 0.2, and 0.2 files without one are given an id
+the first time the service opens them.
 
 `m` is always a multiple of 8 so the bit array is byte-aligned, and `k` is at most
 128 (`MAX_HASHES`; sizing rejects error rates that would need more). When a filter
@@ -152,7 +160,7 @@ replaying its own entries when no other host wrote meanwhile. `swap` renames the
 filter, log and snapshot together in one `MULTI`, so every host sees the new
 generation on its next catch-up and loads it.
 
-**Restarts and processes.** The mirror's `(file identity, generation, cursor)` is
+**Restarts and processes.** The mirror's `(file id, generation, cursor)` is
 saved in `<mirror>.bloom.synced` (after a bootstrap, on flush/close, and every
 10 s), after flushing the mirror, so the saved state never runs ahead of the
 file. A restarted process resumes from it without downloading the snapshot.
@@ -177,7 +185,7 @@ shared volume). Trust is tracked explicitly:
 | `add` / `add_many` | **unchanged**: adding items never makes a mirror trusted |
 | mirror file deleted or replaced | the new file is untrusted until one of the above |
 
-Trust is the marker file holding the mirror's device and inode numbers, so it
+Trust is the marker file holding the mirror's random file id, so it
 survives restarts and is shared by every process on the host. Because it names a
 specific file, a recreated mirror is never trusted by accident. Processes notice
 another process's rebuild or swap within `sync_interval` seconds.

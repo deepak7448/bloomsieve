@@ -269,7 +269,7 @@ without one.
   mirror detects and reloads. The keys share the filter's Redis Cluster hash slot.
 - **Trust:** the service only answers negatives locally from a mirror that is
   provably complete and fresh. Its state (generation, log position) is saved in a
-  small `<file>.synced` marker tied to the mirror's identity on disk. A restart
+  small `<file>.synced` marker tied to a random id stored in the mirror file. A restart
   resumes from where it left off, and a recreated file is never trusted by
   accident.
 

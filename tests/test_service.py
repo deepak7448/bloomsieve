@@ -238,6 +238,32 @@ class TestCorePromise:
         os.remove(mirrored._mmap_path("users"))  # e.g. an operator deleted the file
         assert mirrored.exists("users", "alice") is True
 
+    def test_recreated_file_with_a_reused_inode_is_not_trusted(self, mirrored, fake, monkeypatch):
+        # Regression (seen on GitHub Actions): the file system gave the recreated,
+        # empty file the old inode number, so an inode-based marker trusted it and
+        # exists() answered "absent" for an item that is present.
+        monkeypatch.setattr("bloomsieve.redis_service._file_identity", lambda st: "1:42")
+        mirrored.create_filter("users")
+        mirrored.add("users", "alice")
+        mirrored.close()
+        os.remove(mirrored._mmap_path("users"))
+        assert mirrored.exists("users", "alice") is True
+
+    def test_mirror_from_0_2_without_file_id_is_adopted(self, mirrored, fake):
+        mirrored.create_filter("users")
+        mirrored.add("users", "alice")
+        bf = mirrored._init_mmap("users")
+        size = bf.total_size
+        mirrored.close()
+        os.remove(mirrored._mmap_path("users") + ".synced")
+        with open(mirrored._mmap_path("users"), "r+b") as fh:
+            fh.truncate(size)  # as written by 0.2: no trailer, no marker
+        assert mirrored.exists("users", "alice") is True  # untrusted -> Redis
+        assert mirrored.mark_synced("users") is True
+        fake.calls.clear()
+        assert mirrored.exists("users", "nobody") is False
+        assert fake.calls == []
+
     def test_mark_synced(self, mirrored, fake):
         fake.filters["users"] = {"alice"}
         mirrored.add("users", "alice")  # mirror now holds everything Redis has
