@@ -19,7 +19,8 @@ concurrency:
 jobs:
   test:
     name: Test (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest (26.04) has no Python 3.9 build, and 3.9 is still supported.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
