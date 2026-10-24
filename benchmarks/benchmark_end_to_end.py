@@ -108,14 +108,9 @@ def main() -> None:
     )
 
     try:
-        svc.create_filter(key, n_items, args.error_rate)
-        pipe = client.pipeline()
-        for i in range(n_items):
-            pipe.execute_command("BF.ADD", key, f"item-{i}")
-            svc.add(key, f"item-{i}")
-            if i % 10000 == 0:
-                pipe.execute()
-        pipe.execute()
+        # rebuild() deletes any leftover key, then fills Redis and the local mirror
+        # together, leaving the mirror trusted.
+        svc.rebuild(key, (f"item-{i}" for i in range(n_items)), n_items, args.error_rate)
 
         header = (
             f"{'rtt(ms)':>8} {'path':>15} {'requests':>10} {'avoided':>10} {'avoid %':>9} "
@@ -164,12 +159,8 @@ def main() -> None:
             )
 
     finally:
-        try:
-            client.delete(key)
-        except Exception:
-            pass
-        for name in list(BloomFilterService._mmaps):
-            svc._close_mmap(name)
+        svc.delete_filter(key)  # the filter, its change log and snapshot, and the mirror
+        svc.close()
 
     print_report(report)
     save_json(results, args.output)

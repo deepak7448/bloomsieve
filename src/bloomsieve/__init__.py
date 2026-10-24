@@ -7,14 +7,15 @@ filter to reject definite-negative membership queries without a network request.
 
 from .core import BloomFilter, BloomFilterFileError
 from .redis_service import BloomFilterService
-from .utils import get_hash_indices, get_optimal_m_k
+from .utils import MAX_HASHES, get_hash_indices, get_optimal_m_k
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 __all__ = [
     "BloomFilter",
     "BloomFilterFileError",
     "BloomFilterService",
+    "MAX_HASHES",
     "__version__",
     "get_hash_indices",
     "get_optimal_m_k",

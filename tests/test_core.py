@@ -1,11 +1,14 @@
+import hashlib
 import logging
+import multiprocessing
 import os
 import struct
+import threading
 
 import pytest
 
 from bloomsieve import BloomFilter, BloomFilterFileError
-from bloomsieve.utils import get_optimal_m_k
+from bloomsieve.utils import MAX_HASHES, get_hash_indices, get_optimal_m_k
 
 HEADER_SIZE = 16
 
@@ -254,3 +257,135 @@ def test_optimal_params_helper():
     assert m % 8 == 0
     assert m >= 8
     assert k >= 1
+
+
+def test_optimal_params_reject_nan_error_rate():
+    with pytest.raises(ValueError):
+        get_optimal_m_k(1000, float("nan"))
+
+
+def test_error_rate_too_small_is_rejected_up_front():
+    # Regression: k > 128 used to produce a file the library itself refused to reopen.
+    with pytest.raises(ValueError, match="too small"):
+        BloomFilter(capacity=10, error_rate=1e-40)
+    _, k = get_optimal_m_k(10, 1e-38)
+    assert k <= MAX_HASHES
+
+
+class TestFormatCompatibility:
+    def test_bit_layout_is_unchanged(self):
+        # Golden value produced by bloomsieve 0.2.x.  Files written by older
+        # versions are only readable if the bit layout never changes.
+        bf = BloomFilter(capacity=100, error_rate=0.01)
+        for item in ("alice", "bob", b"\x00\xff"):
+            bf.add(item)
+        assert (bf.m, bf.k) == (960, 7)
+        assert hashlib.sha256(bytes(bf._bitarray)).hexdigest() == (
+            "86545fb7b532104660627fb49c75e62cbaaf535bf64f794dcde02363f8080f88"
+        )
+
+    def test_bits_match_get_hash_indices(self):
+        bf = BloomFilter(capacity=500, error_rate=0.001)
+        bf.add("item")
+        for idx in get_hash_indices("item", bf.m, bf.k):
+            assert bf._bitarray[idx // 8] & (1 << (idx % 8))
+
+
+class TestBatchAndIntrospection:
+    def test_add_many_returns_new_item_count(self, tmp_path):
+        for path in (None, str(tmp_path / "batch.bloom")):
+            with BloomFilter(capacity=1000, error_rate=0.01, filepath=path) as bf:
+                assert bf.add_many(["a", "b", "c"]) == 3
+                assert bf.add_many(["a", "d"]) == 1
+                assert all(x in bf for x in "abcd")
+
+    def test_add_many_type_error(self):
+        bf = BloomFilter(capacity=1000, error_rate=0.01)
+        with pytest.raises(TypeError):
+            bf.add_many(["ok", 5])
+        assert "ok" in bf
+
+    def test_closed_and_repr(self, tmp_path):
+        bf = BloomFilter(capacity=1000, error_rate=0.01, filepath=str(tmp_path / "r.bloom"))
+        assert not bf.closed
+        assert "r.bloom" in repr(bf)
+        bf.close()
+        assert bf.closed
+        assert "closed" in repr(bf)
+        with pytest.raises(RuntimeError):
+            bf.add_many(["x"])
+        with pytest.raises(RuntimeError):
+            bf.flush()
+
+
+class TestConcurrency:
+    def test_threads_sharing_one_instance_lose_no_items(self):
+        bf = BloomFilter(capacity=200, error_rate=0.3)
+        workers = 8
+
+        def run(j):
+            for i in range(2000):
+                bf.add(f"{j}-{i}")
+
+        threads = [threading.Thread(target=run, args=(j,)) for j in range(workers)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert all(f"{j}-{i}" in bf for j in range(workers) for i in range(2000))
+
+    def test_processes_sharing_one_file_lose_no_items(self, tmp_path):
+        # Regression: unlocked read-modify-write of shared bytes lost bits.
+        if not hasattr(os, "fork"):
+            pytest.skip("needs fork")
+        ctx = multiprocessing.get_context("fork")
+        paths = [str(tmp_path / f"t{t}.bloom") for t in range(40)]
+        for p in paths:
+            BloomFilter(capacity=300, error_rate=0.3, filepath=p).close()
+        workers = 6
+        barrier = ctx.Barrier(workers)
+        procs = [ctx.Process(target=_add_worker, args=(paths, barrier, j)) for j in range(workers)]
+        for p in procs:
+            p.start()
+        for p in procs:
+            p.join()
+        assert all(p.exitcode == 0 for p in procs)
+        missing = 0
+        for t, path in enumerate(paths):
+            with BloomFilter(capacity=300, error_rate=0.3, filepath=path) as bf:
+                missing += sum(f"{t}-{j}-{i}" not in bf for j in range(workers) for i in range(40))
+        assert missing == 0
+
+    def test_concurrent_creation_never_clobbers_a_file(self, tmp_path):
+        path = str(tmp_path / "race.bloom")
+        filters, errors = [], []
+
+        def open_and_add(j):
+            try:
+                bf = BloomFilter(capacity=1000, error_rate=0.01, filepath=path)
+                bf.add(f"item-{j}")
+                filters.append(bf)
+            except Exception as exc:  # pragma: no cover - reported below
+                errors.append(exc)
+
+        threads = [threading.Thread(target=open_and_add, args=(j,)) for j in range(16)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
+        assert sum(bf.newly_created for bf in filters) == 1
+        for bf in filters:
+            bf.close()
+        with BloomFilter(capacity=1000, error_rate=0.01, filepath=path) as bf:
+            assert all(f"item-{j}" in bf for j in range(16))
+        assert [f for f in os.listdir(tmp_path) if f.endswith(".tmp")] == []
+
+
+def _add_worker(paths, barrier, j):
+    for t, path in enumerate(paths):
+        bf = BloomFilter(capacity=300, error_rate=0.3, filepath=path)
+        barrier.wait()
+        for i in range(40):
+            bf.add(f"{t}-{j}-{i}")
+        bf.close()

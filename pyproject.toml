@@ -36,6 +36,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Database",
     "Topic :: System :: Distributed Computing",
+    "Typing :: Typed",
 ]
 
 # Core mode has no runtime dependencies.  Redis is only required for the
@@ -67,8 +68,7 @@ include = [
     "CHANGELOG.md",
     "LICENSE",
     "src/bloomsieve/**",
-    "examples/basic_usage.py",
-    "examples/redis_prefilter.py",
+    "examples/**",
     "tests/**",
     "docs/**",
     "benchmarks/**",
