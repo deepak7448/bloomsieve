@@ -8,7 +8,7 @@
 **Stop sending unnecessary membership checks to Redis.** Bloomsieve is a fast,
 persistent, mmap-backed Bloom filter for Python. On its own it is a zero-dependency
 Bloom filter you can share between processes. In front of RedisBloom it answers
-"definitely absent" locally, so only the *possible positives* cross the network,
+"definitely absent" locally, so only the _possible positives_ cross the network,
 and it keeps the local filters on all your servers in sync through Redis.
 
 ```text
@@ -164,7 +164,7 @@ svc.exists("active_tokens", "tok_abc")  # True  - verified in Redis
 Run the same code on every application server; each keeps its mirror on its own
 disk. Every write, on any server, is also recorded in a small per-filter change
 log in Redis, and each mirror catches up on that log before it answers "absent".
-That makes a local "absent" correct for items added on *any* server, up to a
+That makes a local "absent" correct for items added on _any_ server, up to a
 bounded delay:
 
 ```python
@@ -178,7 +178,7 @@ svc = BloomFilterService(
 
 **Guarantee:** `exists()` only answers `False` locally if the mirror caught up
 with Redis less than `sync_interval` seconds ago. So it can only miss an item
-added on *another* server within the last `sync_interval` seconds. Items added
+added on _another_ server within the last `sync_interval` seconds. Items added
 through the same mirror are visible at once. If a mirror cannot catch up (Redis
 down, filter not replicated), it stops answering negatives and every lookup goes
 to Redis. `sync_interval=0` makes every lookup check Redis first: always exact,
@@ -240,16 +240,16 @@ Runnable scripts in [`examples/`](examples/). The Redis ones need a server
 (`BLOOMSIEVE_REDIS_URL`, default `redis://localhost:6379/0`) and skip cleanly
 without one.
 
-| Script | Shows |
-| --- | --- |
-| [`basic_usage.py`](examples/basic_usage.py) | in-memory filter, `add` return value, `add_many`, `clear`, sizing |
-| [`dedupe_stream.py`](examples/dedupe_stream.py) | de-duplicating a stream of URLs |
-| [`persistent_filter.py`](examples/persistent_filter.py) | file-backed filter, reopen, `flush`, corrupt-file handling |
-| [`multiprocess_shared_file.py`](examples/multiprocess_shared_file.py) | several processes writing one file without losing items |
-| [`redis_prefilter.py`](examples/redis_prefilter.py) | Redis pre-filter, batch APIs, counting avoided requests |
-| [`redis_rotation.py`](examples/redis_rotation.py) | `load_ratio` trigger, lock, `rebuild` + `swap` |
-| [`redis_multi_host.py`](examples/redis_multi_host.py) | several servers: a write on one is seen by the others; a late joiner loads the snapshot |
-| [`redis_adopt_existing.py`](examples/redis_adopt_existing.py) | fallback for a filter that is not replicated, then `rebuild` |
+| Script                                                                | Shows                                                                                   |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [`basic_usage.py`](examples/basic_usage.py)                           | in-memory filter, `add` return value, `add_many`, `clear`, sizing                       |
+| [`dedupe_stream.py`](examples/dedupe_stream.py)                       | de-duplicating a stream of URLs                                                         |
+| [`persistent_filter.py`](examples/persistent_filter.py)               | file-backed filter, reopen, `flush`, corrupt-file handling                              |
+| [`multiprocess_shared_file.py`](examples/multiprocess_shared_file.py) | several processes writing one file without losing items                                 |
+| [`redis_prefilter.py`](examples/redis_prefilter.py)                   | Redis pre-filter, batch APIs, counting avoided requests                                 |
+| [`redis_rotation.py`](examples/redis_rotation.py)                     | `load_ratio` trigger, lock, `rebuild` + `swap`                                          |
+| [`redis_multi_host.py`](examples/redis_multi_host.py)                 | several servers: a write on one is seen by the others; a late joiner loads the snapshot |
+| [`redis_adopt_existing.py`](examples/redis_adopt_existing.py)         | fallback for a filter that is not replicated, then `rebuild`                            |
 
 ## How it works
 
@@ -280,12 +280,12 @@ Full design, on-disk format, failure modes and consistency model:
 
 Memory is `m / 8` bytes, fixed up front:
 
-| capacity | error_rate 1% | 0.1% | 0.01% |
-| ---: | ---: | ---: | ---: |
-| 100 000 | 0.1 MiB (k=7) | 0.2 MiB (k=10) | 0.2 MiB (k=13) |
-| 1 000 000 | 1.1 MiB (k=7) | 1.7 MiB (k=10) | 2.3 MiB (k=13) |
-| 10 000 000 | 11.4 MiB (k=7) | 17.1 MiB (k=10) | 22.9 MiB (k=13) |
-| 100 000 000 | 114 MiB (k=7) | 171 MiB (k=10) | 229 MiB (k=13) |
+|    capacity |  error_rate 1% |            0.1% |           0.01% |
+| ----------: | -------------: | --------------: | --------------: |
+|     100 000 |  0.1 MiB (k=7) |  0.2 MiB (k=10) |  0.2 MiB (k=13) |
+|   1 000 000 |  1.1 MiB (k=7) |  1.7 MiB (k=10) |  2.3 MiB (k=13) |
+|  10 000 000 | 11.4 MiB (k=7) | 17.1 MiB (k=10) | 22.9 MiB (k=13) |
+| 100 000 000 |  114 MiB (k=7) |  171 MiB (k=10) |  229 MiB (k=13) |
 
 `get_optimal_m_k(capacity, error_rate)` returns `(m, k)` without allocating
 anything. Going past `capacity` does not break the filter; its false-positive rate
@@ -298,12 +298,12 @@ Redis 8.6 on **localhost** (so the network is as fast as it gets),
 Python 3.9, Intel i7-14650HX:
 
 | Negative lookups | Redis requests avoided | Total time, Redis only | Total time, Bloomsieve |
-| ---: | ---: | ---: | ---: |
-| 50% | 50.0% | 3.60 s | 2.48 s |
-| 75% | 74.9% | 3.17 s | 1.20 s |
-| 90% | 89.9% | 3.35 s | 0.58 s |
-| 95% | 94.9% | 3.30 s | 0.42 s |
-| 99% | 98.9% | 3.50 s | 0.31 s |
+| ---------------: | ---------------------: | ---------------------: | ---------------------: |
+|              50% |                  50.0% |                 3.60 s |                 2.48 s |
+|              75% |                  74.9% |                 3.17 s |                 1.20 s |
+|              90% |                  89.9% |                 3.35 s |                 0.58 s |
+|              95% |                  94.9% |                 3.30 s |                 0.42 s |
+|              99% |                  98.9% |                 3.50 s |                 0.31 s |
 
 With a simulated 2 ms round trip (`benchmark_end_to_end.py`, 90% negative), total
 time drops from 44.8 s to 5.4 s. The further away Redis is, the bigger the win.
@@ -320,17 +320,17 @@ environment. Methodology: [docs/benchmarks.md](docs/benchmarks.md).
 
 ### `BloomFilter(capacity, error_rate, filepath=None)`
 
-| Member | Description |
-| --- | --- |
-| `add(item) -> bool` | Insert; `True` if the item was new. |
-| `add_many(items) -> int` | Insert many under one lock; returns how many were new. |
-| `item in bf` | `False` = definitely absent, `True` = possibly present. |
-| `clear()` | Reset all bits (configuration kept). |
-| `flush()` | Make file-backed writes durable on disk. |
-| `close()` | Flush and release the file; also via `with BloomFilter(...) as bf:`. |
-| `closed` | `True` after `close()`. |
-| `m`, `k`, `byte_size`, `total_size` | Bits, hash functions, bit-array bytes, file bytes. |
-| `newly_created` | `True` if this call created the file (or the filter is in memory). |
+| Member                              | Description                                                          |
+| ----------------------------------- | -------------------------------------------------------------------- |
+| `add(item) -> bool`                 | Insert; `True` if the item was new.                                  |
+| `add_many(items) -> int`            | Insert many under one lock; returns how many were new.               |
+| `item in bf`                        | `False` = definitely absent, `True` = possibly present.              |
+| `clear()`                           | Reset all bits (configuration kept).                                 |
+| `flush()`                           | Make file-backed writes durable on disk.                             |
+| `close()`                           | Flush and release the file; also via `with BloomFilter(...) as bf:`. |
+| `closed`                            | `True` after `close()`.                                              |
+| `m`, `k`, `byte_size`, `total_size` | Bits, hash functions, bit-array bytes, file bytes.                   |
+| `newly_created`                     | `True` if this call created the file (or the filter is in memory).   |
 
 Items are `str` or `bytes`; anything else raises `TypeError`. Operations on a
 closed filter raise `RuntimeError`. A corrupt file raises `BloomFilterFileError`
@@ -345,20 +345,20 @@ safety cap: if the log ever reaches it (no mirror is compacting), replication of
 that filter switches off and mirrors fall back to Redis until it is rebuilt. Keep
 it well above `write rate × sync_interval`.
 
-| Method | Description |
-| --- | --- |
-| `create_filter(name, capacity=None, error_rate=None) -> bool` | `BF.RESERVE`; an existing filter counts as success (`createFilter` is an alias). |
-| `add(name, item) -> bool` | Add to the mirror, then `BF.ADD`. |
-| `add_many(name, items) -> bool` | Add to the mirror, then pipelined `BF.MADD`. |
-| `exists(name, item) -> bool` | Local definite negative, otherwise `BF.EXISTS`. |
-| `exists_many(name, items) -> list[bool]` | Local negatives, the rest in one `BF.MEXISTS` round trip. |
-| `rebuild(name, items, capacity=None, error_rate=None) -> bool` | Recreate the filter from `items` as a new generation. |
-| `swap(temp_name, live_name) -> bool` | Rename the filter (and its log and snapshot) in Redis and rotate the local mirror. |
-| `delete_filter(name) -> bool` | Delete the filter, its log and snapshot, and the local mirror. |
-| `mark_synced(name) -> bool` | `replicate=False` only: declare the local mirror complete (use with care). |
-| `get_info(name) -> dict`, `load_ratio(name) -> float` | `BF.INFO`: capacity, inserted, ratio. |
-| `acquire_lock(name, ttl=600)`, `release_lock(name) -> bool` | Advisory Redis lock with an ownership token. |
-| `flush(name=None)`, `close(name=None)` | Flush / close local mirrors; also usable as a context manager. |
+| Method                                                         | Description                                                                        |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `create_filter(name, capacity=None, error_rate=None) -> bool`  | `BF.RESERVE`; an existing filter counts as success (`createFilter` is an alias).   |
+| `add(name, item) -> bool`                                      | Add to the mirror, then `BF.ADD`.                                                  |
+| `add_many(name, items) -> bool`                                | Add to the mirror, then pipelined `BF.MADD`.                                       |
+| `exists(name, item) -> bool`                                   | Local definite negative, otherwise `BF.EXISTS`.                                    |
+| `exists_many(name, items) -> list[bool]`                       | Local negatives, the rest in one `BF.MEXISTS` round trip.                          |
+| `rebuild(name, items, capacity=None, error_rate=None) -> bool` | Recreate the filter from `items` as a new generation.                              |
+| `swap(temp_name, live_name) -> bool`                           | Rename the filter (and its log and snapshot) in Redis and rotate the local mirror. |
+| `delete_filter(name) -> bool`                                  | Delete the filter, its log and snapshot, and the local mirror.                     |
+| `mark_synced(name) -> bool`                                    | `replicate=False` only: declare the local mirror complete (use with care).         |
+| `get_info(name) -> dict`, `load_ratio(name) -> float`          | `BF.INFO`: capacity, inserted, ratio.                                              |
+| `acquire_lock(name, ttl=600)`, `release_lock(name) -> bool`    | Advisory Redis lock with an ownership token.                                       |
+| `flush(name=None)`, `close(name=None)`                         | Flush / close local mirrors; also usable as a context manager.                     |
 
 When Redis is unreachable, writes return `False` and lookups return a
 conservative `True`, both with a logged warning. Bloomsieve logs through the
@@ -386,7 +386,7 @@ standard `logging` module (`bloomsieve.core`, `bloomsieve.redis_service`).
 - **Multi-server sync is on by default** (`replicate=True`). In 0.2 a mirror only
   knew about its own host's writes, and any existing mirror file, or any mirror
   after a single `add`, was trusted. That produced wrong "absent" answers. In 0.3,
-  filters from 0.2 start *unreplicated*: lookups stay correct but go to Redis
+  filters from 0.2 start _unreplicated_: lookups stay correct but go to Redis
   until you run `rebuild(name, items)` once. A warning is logged once per filter.
 - Writes through the service now run a Lua script (Redis 6.2+), and replicated
   filters use two extra keys per filter (`bloomsieve:{<name>}:log` / `:snap`).
@@ -397,31 +397,6 @@ standard `logging` module (`bloomsieve.core`, `bloomsieve.redis_service`).
 - `error_rate` values needing more than 128 hash functions now raise `ValueError`.
 
 Full list: [CHANGELOG.md](CHANGELOG.md).
-
-## Development
-
-```bash
-git clone https://github.com/deepak7448/bloomsieve.git
-cd bloomsieve
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,redis]"
-
-ruff check . && ruff format --check .
-pytest                                                # unit tests, no Redis needed
-BLOOMSIEVE_REDIS_URL=redis://localhost:6379/0 pytest  # plus the live Redis suite
-```
-
-**Releasing:** bump `__version__` in `src/bloomsieve/__init__.py`, update
-`CHANGELOG.md`, commit and push, then publish a GitHub release with tag `v<version>`
-(e.g. `v0.3.0`). The `Publish to PyPI` workflow (`.github/workflows/publish.yml`)
-checks the tag against `__version__`, runs lint and unit tests, builds once, and
-uploads with Trusted Publishing and signed attestations, so every file shows its
-provenance on PyPI. A release marked *pre-release* goes to TestPyPI. Tests run
-separately in `ci.yml` on every push and pull request. `./build.sh` runs the same
-checks locally; manual uploads carry no provenance, so publish releases from GitHub.
-
-Issues and pull requests are welcome. Please run the linter and the full test
-suite (including the live Redis suite if you can) before submitting.
 
 ## License
 
